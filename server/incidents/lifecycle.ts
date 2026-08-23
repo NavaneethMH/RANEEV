@@ -1,13 +1,14 @@
 /* RANEEV incident lifecycle — one shared transition policy for every server procedure. */
 import type { Incident, IncidentEventType } from "../../drizzle/schema";
 
-export type ManagedIncidentStatus = Extract<Incident["status"], "searching" | "accepted" | "en_route" | "arrived" | "resolved">;
+export type ManagedIncidentStatus = Extract<Incident["status"], "searching" | "accepted" | "en_route" | "arrived" | "assisting" | "resolved">;
 
 const transitions: Record<ManagedIncidentStatus, readonly ManagedIncidentStatus[]> = {
   searching: ["accepted"],
   accepted: ["en_route"],
   en_route: ["arrived"],
-  arrived: ["resolved"],
+  arrived: ["assisting", "resolved"],
+  assisting: ["resolved"],
   resolved: [],
 };
 
@@ -16,6 +17,7 @@ const eventForStatus: Record<ManagedIncidentStatus, IncidentEventType> = {
   accepted: "responder_accepted",
   en_route: "en_route",
   arrived: "arrived",
+  assisting: "assistance_started",
   resolved: "resolved",
 };
 

@@ -33,3 +33,14 @@
 - [x] Save the post-mapping delivery checkpoint after closing the remaining verification gaps.
 - [x] Force and verify the degraded emergency-map fallback at desktop and mobile sizes.
 - [x] Save the final post-mapping checkpoint after fallback verification.
+- [x] Review the existing shared incident lifecycle and preserve Citizen-created incidents as the sole source of Volunteer work.
+- [x] Add a minimal volunteer verification and availability model with server-side eligibility guards.
+- [x] Add protected shared-incident matching, acceptance, navigation, arrival, assistance, and volunteer-initiated resolution procedures.
+- [x] Connect the existing Volunteer verification, dashboard, availability, nearby emergency, acceptance, active response, assistance, and history screens to the shared incident APIs.
+- [x] Display live authorized maps and navigation for the assigned incident without duplicating incident data.
+- [x] Verify Citizen-to-Volunteer incident visibility, acceptance locking, role and ownership denial paths, and the full responsive Volunteer flow.
+- [x] Save a verified shared-record Volunteer Mode checkpoint.
+- [x] Connect or redirect the existing Volunteer acceptance and assistance routes to the shared active incident flow.
+- [x] Verify a second Volunteer cannot accept an already assigned Citizen incident.
+- [x] Verify unverified, offline, and non-assigned Volunteer guard denials through protected procedures.
+- [x] Save the post-verification shared-record Volunteer Mode checkpoint.

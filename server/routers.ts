@@ -18,6 +18,10 @@ const passwordSchema = z.string().min(12).max(128);
 const publicRegistrationRole = z.enum(["citizen", "volunteer"]);
 const incidentInput = z.object({ emergencyType: z.enum(emergencyTypes), locationLabel: z.string().trim().min(3).max(255), latitude: z.number().min(-90).max(90), longitude: z.number().min(-180).max(180), accuracyMeters: z.number().int().min(0).max(100_000), description: z.string().trim().max(500).optional() });
 
+function requireVerifiedVolunteer(user: User) {
+  if (user.role !== "volunteer" || user.profileStatus !== "active") throw new TRPCError({ code: "FORBIDDEN", message: "Volunteer verification is required before this response action." });
+}
+
 export const appRouter = router({
   system: systemRouter,
   auth: router({
@@ -101,21 +105,50 @@ export const appRouter = router({
     }),
   }),
   volunteer: router({
-    eligibleIncidents: roleProcedure(["volunteer"]).query(({ ctx }) => db.listIncidentsVisibleTo(ctx.user)),
+    readiness: roleProcedure(["volunteer"]).query(({ ctx }) => db.getVolunteerReadiness(ctx.user.id)),
+    completeDevelopmentVerification: roleProcedure(["volunteer"]).mutation(async ({ ctx }) => {
+      if (process.env.NODE_ENV === "production") throw new TRPCError({ code: "FORBIDDEN", message: "Volunteer verification requires coordinator review in production." });
+      const readiness = await db.verifyVolunteer(ctx.user.id);
+      if (!readiness) throw new TRPCError({ code: "NOT_FOUND", message: "Volunteer profile not found." });
+      return readiness;
+    }),
+    setAvailability: roleProcedure(["volunteer"]).input(z.object({ availability: z.enum(["offline", "available", "busy"]), latitude: z.number().min(-90).max(90).optional(), longitude: z.number().min(-180).max(180).optional() })).mutation(async ({ ctx, input }) => {
+      requireVerifiedVolunteer(ctx.user);
+      if (input.availability === "available" && (input.latitude === undefined || input.longitude === undefined)) throw new TRPCError({ code: "BAD_REQUEST", message: "Current location is required to become available." });
+      const readiness = await db.setVolunteerAvailability(ctx.user.id, { availability: input.availability, latitudeE6: input.latitude === undefined ? undefined : Math.round(input.latitude * 1_000_000), longitudeE6: input.longitude === undefined ? undefined : Math.round(input.longitude * 1_000_000) });
+      if (!readiness) throw new TRPCError({ code: "NOT_FOUND", message: "Volunteer profile not found." });
+      return readiness;
+    }),
+    nearbyIncidents: roleProcedure(["volunteer"]).query(async ({ ctx }) => {
+      requireVerifiedVolunteer(ctx.user);
+      const readiness = await db.getVolunteerReadiness(ctx.user.id);
+      if (readiness?.availability !== "available") throw new TRPCError({ code: "FORBIDDEN", message: "Go available before viewing nearby emergency requests." });
+      const nearby = await db.listNearbyOpenIncidents(ctx.user.id);
+      return nearby.map(incident => ({ publicId: incident.publicId, emergencyType: incident.emergencyType, distanceMeters: incident.distanceMeters, createdAt: incident.createdAt, responseArea: "Approximate incident area available before acceptance" }));
+    }),
+    activeIncident: roleProcedure(["volunteer"]).query(({ ctx }) => db.getActiveIncidentForVolunteer(ctx.user.id)),
     accept: roleProcedure(["volunteer"]).input(z.object({ publicId: z.string().min(3).max(40) })).mutation(async ({ ctx, input }) => {
-      try { const incident = await db.acceptIncident(input.publicId, ctx.user.id); if (!incident) throw new TRPCError({ code: "NOT_FOUND", message: "Incident not found." }); return incident; }
+      try { requireVerifiedVolunteer(ctx.user); const readiness = await db.getVolunteerReadiness(ctx.user.id); if (readiness?.availability !== "available") throw new Error("Go available before accepting an emergency request."); const incident = await db.acceptIncident(input.publicId, ctx.user.id); if (!incident) throw new TRPCError({ code: "NOT_FOUND", message: "Incident not found." }); await db.setVolunteerAvailability(ctx.user.id, { availability: "busy" }); return incident; }
       catch (error) { if (error instanceof TRPCError) throw error; throw new TRPCError({ code: "CONFLICT", message: error instanceof Error ? error.message : "Incident is not available." }); }
     }),
     startRoute: roleProcedure(["volunteer"]).input(z.object({ publicId: z.string().min(3).max(40) })).mutation(async ({ ctx, input }) => {
-      try { const incident = await db.volunteerAdvance(input.publicId, ctx.user.id, "en_route"); if (!incident) throw new TRPCError({ code: "NOT_FOUND", message: "Incident not found." }); return incident; }
+      try { requireVerifiedVolunteer(ctx.user); const incident = await db.volunteerAdvance(input.publicId, ctx.user.id, "en_route"); if (!incident) throw new TRPCError({ code: "NOT_FOUND", message: "Incident not found." }); return incident; }
       catch (error) { if (error instanceof TRPCError) throw error; throw new TRPCError({ code: "FORBIDDEN", message: error instanceof Error ? error.message : "Response could not start." }); }
     }),
     arrive: roleProcedure(["volunteer"]).input(z.object({ publicId: z.string().min(3).max(40) })).mutation(async ({ ctx, input }) => {
-      try { const incident = await db.volunteerAdvance(input.publicId, ctx.user.id, "arrived"); if (!incident) throw new TRPCError({ code: "NOT_FOUND", message: "Incident not found." }); return incident; }
+      try { requireVerifiedVolunteer(ctx.user); const incident = await db.volunteerAdvance(input.publicId, ctx.user.id, "arrived"); if (!incident) throw new TRPCError({ code: "NOT_FOUND", message: "Incident not found." }); return incident; }
       catch (error) { if (error instanceof TRPCError) throw error; throw new TRPCError({ code: "FORBIDDEN", message: error instanceof Error ? error.message : "Arrival could not be confirmed." }); }
     }),
+    beginAssistance: roleProcedure(["volunteer"]).input(z.object({ publicId: z.string().min(3).max(40) })).mutation(async ({ ctx, input }) => {
+      try { requireVerifiedVolunteer(ctx.user); const incident = await db.volunteerBeginAssistance(input.publicId, ctx.user.id); if (!incident) throw new TRPCError({ code: "NOT_FOUND", message: "Incident not found." }); return incident; }
+      catch (error) { if (error instanceof TRPCError) throw error; throw new TRPCError({ code: "FORBIDDEN", message: error instanceof Error ? error.message : "Assistance could not be started." }); }
+    }),
+    resolve: roleProcedure(["volunteer"]).input(z.object({ publicId: z.string().min(3).max(40) })).mutation(async ({ ctx, input }) => {
+      try { requireVerifiedVolunteer(ctx.user); const incident = await db.resolveIncidentByVolunteer(input.publicId, ctx.user.id); if (!incident) throw new TRPCError({ code: "NOT_FOUND", message: "Incident not found." }); await db.setVolunteerAvailability(ctx.user.id, { availability: "offline" }); return incident; }
+      catch (error) { if (error instanceof TRPCError) throw error; throw new TRPCError({ code: "FORBIDDEN", message: error instanceof Error ? error.message : "Incident could not be resolved." }); }
+    }),
     updateLocation: roleProcedure(["volunteer"]).input(z.object({ publicId: z.string().min(3).max(40), latitude: z.number().min(-90).max(90), longitude: z.number().min(-180).max(180) })).mutation(async ({ ctx, input }) => {
-      try { const incident = await db.updateResponderPosition(input.publicId, ctx.user.id, Math.round(input.latitude * 1_000_000), Math.round(input.longitude * 1_000_000)); if (!incident) throw new TRPCError({ code: "NOT_FOUND", message: "Incident not found." }); return incident; }
+      try { requireVerifiedVolunteer(ctx.user); const incident = await db.updateResponderPosition(input.publicId, ctx.user.id, Math.round(input.latitude * 1_000_000), Math.round(input.longitude * 1_000_000)); if (!incident) throw new TRPCError({ code: "NOT_FOUND", message: "Incident not found." }); return incident; }
       catch (error) { if (error instanceof TRPCError) throw error; throw new TRPCError({ code: "FORBIDDEN", message: error instanceof Error ? error.message : "Responder location could not be updated." }); }
     }),
   }),

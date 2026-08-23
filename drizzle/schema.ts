@@ -10,9 +10,10 @@ import {
 
 export const appRoles = ["citizen", "volunteer", "coordinator", "admin"] as const;
 export const profileStatuses = ["active", "pending_verification", "suspended"] as const;
-export const incidentStatuses = ["active", "searching", "accepted", "en_route", "arrived", "resolved", "cancelled"] as const;
+export const volunteerAvailabilityStates = ["offline", "available", "busy"] as const;
+export const incidentStatuses = ["active", "searching", "accepted", "en_route", "arrived", "assisting", "resolved", "cancelled"] as const;
 export const emergencyTypes = ["medical", "road_accident", "injury", "fire", "unconscious", "other"] as const;
-export const incidentEventTypes = ["created", "search_started", "responder_accepted", "en_route", "arrived", "resolved"] as const;
+export const incidentEventTypes = ["created", "search_started", "responder_accepted", "en_route", "arrived", "assistance_started", "resolved"] as const;
 
 /**
  * `openId` remains the stable internal subject key for template compatibility.
@@ -28,6 +29,11 @@ export const users = mysqlTable("users", {
   loginMethod: varchar("loginMethod", { length: 32 }).notNull().default("credentials"),
   role: mysqlEnum("role", appRoles).notNull().default("citizen"),
   profileStatus: mysqlEnum("profileStatus", profileStatuses).notNull().default("active"),
+  volunteerAvailability: mysqlEnum("volunteerAvailability", volunteerAvailabilityStates).notNull().default("offline"),
+  volunteerLatitudeE6: int("volunteerLatitudeE6"),
+  volunteerLongitudeE6: int("volunteerLongitudeE6"),
+  volunteerLocationUpdatedAt: timestamp("volunteerLocationUpdatedAt"),
+  verifiedAt: timestamp("verifiedAt"),
   sessionVersion: int("sessionVersion").notNull().default(1),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
@@ -53,6 +59,7 @@ export const incidents = mysqlTable("incidents", {
   responderLocationUpdatedAt: timestamp("responderLocationUpdatedAt"),
   acceptedAt: timestamp("acceptedAt"),
   arrivedAt: timestamp("arrivedAt"),
+  assistanceStartedAt: timestamp("assistanceStartedAt"),
   resolvedAt: timestamp("resolvedAt"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
@@ -74,6 +81,7 @@ export const incidentEvents = mysqlTable("incidentEvents", {
 
 export type AppRole = (typeof appRoles)[number];
 export type ProfileStatus = (typeof profileStatuses)[number];
+export type VolunteerAvailability = (typeof volunteerAvailabilityStates)[number];
 export type EmergencyType = (typeof emergencyTypes)[number];
 export type IncidentEventType = (typeof incidentEventTypes)[number];
 export type User = typeof users.$inferSelect;

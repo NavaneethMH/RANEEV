@@ -1,7 +1,7 @@
 /* RANEEV database access — all credential and incident queries return the minimum fields needed for server authorization. */
-import { asc, desc, eq, sql } from "drizzle-orm";
+import { and, asc, desc, eq, isNull, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
-import type { AppRole, EmergencyType, Incident, IncidentEvent, InsertUser, User } from "../drizzle/schema";
+import type { AppRole, EmergencyType, Incident, IncidentEvent, InsertUser, User, VolunteerAvailability } from "../drizzle/schema";
 import { incidentEvents, incidents, users } from "../drizzle/schema";
 import { canTransition, lifecycleEventFor, type ManagedIncidentStatus } from "./incidents/lifecycle";
 
@@ -66,6 +66,26 @@ export async function updateUserRole(userId: number, role: AppRole) {
   const database = await requireDb();
   await database.update(users).set({ role, sessionVersion: sql`${users.sessionVersion} + 1` }).where(eq(users.id, userId));
   return getUserById(userId);
+}
+
+export async function getVolunteerReadiness(userId: number) {
+  const user = await getUserById(userId);
+  if (!user || user.role !== "volunteer") return null;
+  return { profileStatus: user.profileStatus, availability: user.volunteerAvailability, verifiedAt: user.verifiedAt, latitudeE6: user.volunteerLatitudeE6, longitudeE6: user.volunteerLongitudeE6, locationUpdatedAt: user.volunteerLocationUpdatedAt };
+}
+
+export async function verifyVolunteer(userId: number) {
+  const database = await requireDb();
+  await database.update(users).set({ profileStatus: "active", verifiedAt: new Date(), volunteerAvailability: "offline" }).where(and(eq(users.id, userId), eq(users.role, "volunteer")));
+  return getVolunteerReadiness(userId);
+}
+
+export async function setVolunteerAvailability(userId: number, input: { availability: VolunteerAvailability; latitudeE6?: number; longitudeE6?: number }) {
+  const database = await requireDb();
+  const update: Partial<typeof users.$inferInsert> = { volunteerAvailability: input.availability };
+  if (input.latitudeE6 !== undefined && input.longitudeE6 !== undefined) { update.volunteerLatitudeE6 = input.latitudeE6; update.volunteerLongitudeE6 = input.longitudeE6; update.volunteerLocationUpdatedAt = new Date(); }
+  await database.update(users).set(update).where(and(eq(users.id, userId), eq(users.role, "volunteer")));
+  return getVolunteerReadiness(userId);
 }
 
 export async function markSignedIn(userId: number) {
@@ -146,9 +166,10 @@ export async function acceptIncident(publicId: string, volunteerUserId: number) 
   if (!incident) return null;
   if (incident.status !== "searching" || incident.assignedVolunteerId) throw new Error("This incident is no longer available for acceptance.");
   const database = await requireDb();
-  await database.update(incidents).set({ assignedVolunteerId: volunteerUserId, responderLatitudeE6: incident.latitudeE6 + 18_000, responderLongitudeE6: incident.longitudeE6 - 12_000, responderLocationUpdatedAt: new Date() }).where(eq(incidents.id, incident.id));
+  await database.update(incidents).set({ assignedVolunteerId: volunteerUserId, responderLatitudeE6: incident.latitudeE6 + 18_000, responderLongitudeE6: incident.longitudeE6 - 12_000, responderLocationUpdatedAt: new Date() }).where(and(eq(incidents.id, incident.id), eq(incidents.status, "searching"), isNull(incidents.assignedVolunteerId)));
   const refreshed = await getIncidentByPublicId(publicId);
   if (!refreshed) throw new Error("Responder assignment did not return an incident");
+  if (refreshed.assignedVolunteerId !== volunteerUserId) throw new Error("This incident was accepted by another responder.");
   return transitionIncident({ incident: refreshed, to: "accepted", actorUserId: volunteerUserId, note: "A verified responder accepted your request.", responderEtaMinutes: 8 });
 }
 
@@ -166,6 +187,23 @@ export async function volunteerAdvance(publicId: string, volunteerUserId: number
   if (!incident) return null;
   if (incident.assignedVolunteerId !== volunteerUserId) throw new Error("Only the assigned responder can update this incident.");
   return transitionIncident({ incident, to, actorUserId: volunteerUserId, note: to === "en_route" ? "Your responder is on the way." : "Your responder has arrived." });
+}
+
+export async function volunteerBeginAssistance(publicId: string, volunteerUserId: number) {
+  const incident = await getIncidentByPublicId(publicId);
+  if (!incident) return null;
+  if (incident.assignedVolunteerId !== volunteerUserId) throw new Error("Only the assigned responder can begin assistance.");
+  const transitioned = await transitionIncident({ incident, to: "assisting", actorUserId: volunteerUserId, note: "Your responder has started providing assistance." });
+  const database = await requireDb();
+  await database.update(incidents).set({ assistanceStartedAt: new Date() }).where(eq(incidents.id, transitioned.id));
+  return getIncidentByPublicId(publicId);
+}
+
+export async function resolveIncidentByVolunteer(publicId: string, volunteerUserId: number) {
+  const incident = await getIncidentByPublicId(publicId);
+  if (!incident) return null;
+  if (incident.assignedVolunteerId !== volunteerUserId) throw new Error("Only the assigned responder can resolve this incident.");
+  return transitionIncident({ incident, to: "resolved", actorUserId: volunteerUserId, note: "Incident resolved by the assigned responder after assistance." });
 }
 
 export async function resolveIncident(publicId: string, citizenUserId: number) {
@@ -212,6 +250,32 @@ export async function getActiveIncidentForCitizen(citizenUserId: number) {
   const active = await database.select().from(incidents).where(eq(incidents.createdByUserId, citizenUserId)).orderBy(desc(incidents.updatedAt)).limit(20);
   const current = active.find(incident => !["resolved", "cancelled"].includes(incident.status));
   return current ? getIncidentWithResponder(current.publicId) : null;
+}
+
+export async function getActiveIncidentForVolunteer(volunteerUserId: number) {
+  const database = await requireDb();
+  const active = await database.select().from(incidents).where(eq(incidents.assignedVolunteerId, volunteerUserId)).orderBy(desc(incidents.updatedAt)).limit(20);
+  const current = active.find(incident => !["resolved", "cancelled"].includes(incident.status));
+  return current ? getIncidentWithResponder(current.publicId) : null;
+}
+
+function distanceMeters(aLatE6: number, aLngE6: number, bLatE6: number, bLngE6: number) {
+  const radius = 6_371_000;
+  const radians = (value: number) => value * Math.PI / 180;
+  const dLat = radians((bLatE6 - aLatE6) / 1_000_000);
+  const dLng = radians((bLngE6 - aLngE6) / 1_000_000);
+  const lat1 = radians(aLatE6 / 1_000_000);
+  const lat2 = radians(bLatE6 / 1_000_000);
+  const h = Math.sin(dLat / 2) ** 2 + Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLng / 2) ** 2;
+  return Math.round(radius * 2 * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h)));
+}
+
+export async function listNearbyOpenIncidents(volunteerUserId: number) {
+  const volunteer = await getUserById(volunteerUserId);
+  if (!volunteer || volunteer.role !== "volunteer" || volunteer.volunteerLatitudeE6 === null || volunteer.volunteerLongitudeE6 === null) return [];
+  const database = await requireDb();
+  const open = await database.select().from(incidents).where(and(eq(incidents.status, "searching"), isNull(incidents.assignedVolunteerId))).orderBy(desc(incidents.createdAt)).limit(100);
+  return open.map(incident => ({ ...incident, distanceMeters: distanceMeters(volunteer.volunteerLatitudeE6!, volunteer.volunteerLongitudeE6!, incident.latitudeE6, incident.longitudeE6) })).filter(incident => incident.distanceMeters <= 10_000).sort((a, b) => a.distanceMeters - b.distanceMeters);
 }
 
 export async function listIncidentsVisibleTo(user: User): Promise<Incident[]> {

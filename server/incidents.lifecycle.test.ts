@@ -7,6 +7,8 @@ describe("Citizen Emergency Request lifecycle", () => {
     expect(canTransition("searching", "accepted")).toBe(true);
     expect(canTransition("accepted", "en_route")).toBe(true);
     expect(canTransition("en_route", "arrived")).toBe(true);
+    expect(canTransition("arrived", "assisting")).toBe(true);
+    expect(canTransition("assisting", "resolved")).toBe(true);
     expect(canTransition("arrived", "resolved")).toBe(true);
     expect(canTransition("searching", "arrived")).toBe(false);
     expect(canTransition("resolved", "accepted")).toBe(false);
@@ -16,6 +18,7 @@ describe("Citizen Emergency Request lifecycle", () => {
     expect(lifecycleEventFor("accepted")).toBe("responder_accepted");
     expect(lifecycleEventFor("en_route")).toBe("en_route");
     expect(lifecycleEventFor("arrived")).toBe("arrived");
+    expect(lifecycleEventFor("assisting")).toBe("assistance_started");
     expect(lifecycleEventFor("resolved")).toBe("resolved");
   });
 });
