@@ -26,7 +26,7 @@ export async function mountGoogleEmergencyMap(map: google.maps.Map, initialData:
 
   const fitToData = (data: EmergencyMapData) => {
     const bounds = new google.maps.LatLngBounds();
-    [data.incident, data.responder, data.currentLocation, ...(data.hospitals ?? [])].filter(Boolean).forEach(marker => bounds.extend((marker as EmergencyMapMarker).position));
+    [data.incident, data.responder, data.currentLocation, ...(data.hospitals ?? []), ...(data.additionalMarkers ?? [])].filter(Boolean).forEach(marker => bounds.extend((marker as EmergencyMapMarker).position));
     if (!bounds.isEmpty()) map.fitBounds(bounds, 64);
   };
 
@@ -44,7 +44,7 @@ export async function mountGoogleEmergencyMap(map: google.maps.Map, initialData:
   const render = (data: EmergencyMapData) => {
     lastData = data;
     clearMarkers();
-    addMarkers([data.incident, ...(data.responder ? [data.responder] : []), ...(data.currentLocation ? [data.currentLocation] : []), ...(data.hospitals ?? [])]);
+    addMarkers([data.incident, ...(data.responder ? [data.responder] : []), ...(data.currentLocation ? [data.currentLocation] : []), ...(data.hospitals ?? []), ...(data.additionalMarkers ?? [])]);
     queryHospitals(data);
     const routeOrigin = data.route?.origin ?? data.responder?.position;
     const routeDestination = data.route?.destination ?? data.incident.position;

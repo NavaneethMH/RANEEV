@@ -3,6 +3,7 @@ import { and, asc, desc, eq, isNull, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
 import type { AppRole, EmergencyType, GhrEscalation, GhrSeverity, Incident, IncidentEvent, InsertUser, User, VolunteerAvailability } from "../drizzle/schema";
 import { incidentEvents, incidents, users } from "../drizzle/schema";
+import { averageAcceptanceMinutes, coordinatorPriority } from "./coordinator/metrics";
 import { canCloseGoldenHourResponse, isGoldenHourActive } from "./ghr/policy";
 import { canTransition, lifecycleEventFor, type ManagedIncidentStatus } from "./incidents/lifecycle";
 
@@ -343,4 +344,25 @@ export async function listIncidentsVisibleTo(user: User): Promise<Incident[]> {
   if (user.role === "admin" || user.role === "coordinator") return database.select().from(incidents).orderBy(desc(incidents.updatedAt)).limit(200);
   if (user.role === "citizen") return database.select().from(incidents).where(eq(incidents.createdByUserId, user.id)).orderBy(desc(incidents.updatedAt)).limit(100);
   return database.select().from(incidents).where(eq(incidents.assignedVolunteerId, user.id)).orderBy(desc(incidents.updatedAt)).limit(100);
+}
+
+export async function getCoordinatorCommandCenter() {
+  const database = await requireDb();
+  const incidentRows = await database.select({ incident: incidents, responderName: users.name, responderAvailability: users.volunteerAvailability }).from(incidents).leftJoin(users, eq(incidents.assignedVolunteerId, users.id)).orderBy(desc(incidents.updatedAt)).limit(200);
+  const responderRows = await database.select({ id: users.id, name: users.name, profileStatus: users.profileStatus, availability: users.volunteerAvailability, latitudeE6: users.volunteerLatitudeE6, longitudeE6: users.volunteerLongitudeE6, locationUpdatedAt: users.volunteerLocationUpdatedAt }).from(users).where(eq(users.role, "volunteer")).orderBy(desc(users.volunteerLocationUpdatedAt)).limit(200);
+  const allIncidents = incidentRows.map(row => ({ ...row.incident, responderName: row.responderName, responderAvailability: row.responderAvailability }));
+  const activeIncidents = allIncidents.filter(incident => !["resolved", "cancelled"].includes(incident.status)).sort((left, right) => coordinatorPriority(right.status, right.ghrSeverity) - coordinatorPriority(left.status, left.ghrSeverity) || right.updatedAt.getTime() - left.updatedAt.getTime());
+  const activeIds = new Set(activeIncidents.map(incident => incident.id));
+  const eventRows = await database.select({ event: incidentEvents, publicId: incidents.publicId, emergencyType: incidents.emergencyType }).from(incidentEvents).innerJoin(incidents, eq(incidentEvents.incidentId, incidents.id)).orderBy(desc(incidentEvents.createdAt), desc(incidentEvents.id)).limit(100);
+  const timeline = eventRows.filter(row => activeIds.has(row.event.incidentId)).slice(0, 20).map(row => ({ ...row.event, publicId: row.publicId, emergencyType: row.emergencyType }));
+  return {
+    metrics: {
+      activeEmergencies: activeIncidents.length,
+      availableResponders: responderRows.filter(responder => responder.profileStatus === "active" && responder.availability === "available").length,
+      averageAcceptanceMinutes: averageAcceptanceMinutes(allIncidents),
+    },
+    activeIncidents: activeIncidents.slice(0, 20),
+    responders: responderRows,
+    timeline,
+  };
 }

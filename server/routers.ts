@@ -189,6 +189,7 @@ export const appRouter = router({
   }),
   coordinator: router({
     activeIncidents: roleProcedure(["coordinator", "admin"]).query(({ ctx }) => db.listIncidentsVisibleTo(ctx.user)),
+    commandCenter: roleProcedure(["coordinator", "admin"]).query(() => db.getCoordinatorCommandCenter()),
   }),
   admin: router({
     users: adminProcedure.query(() => db.listUsersForAdmin()),

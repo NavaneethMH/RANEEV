@@ -52,3 +52,10 @@
 - [x] Verify Golden Hour Response authorization, lifecycle integrity, timing display, route/facility behaviour, and desktop/mobile flows.
 - [x] Save a verified Golden Hour Response checkpoint.
 - [x] Save the final post-Golden-Hour Response checkpoint after verification.
+- [x] Review coordinator-visible shared incidents, responder readiness, response timings, and map capabilities for command-center use.
+- [x] Add protected coordinator summary and field-view procedures using existing incidents, users, locations, and immutable events.
+- [x] Calculate active-emergency, responder, and average response-time metrics from persisted data without mock dashboard counters.
+- [x] Build an operational coordinator main screen with metrics, live map, active-incidents queue, responder state, and incident timeline.
+- [x] Verify coordinator-only access, metric correctness, live shared-record updates, map behaviour, and desktop/mobile layout.
+- [x] Save a verified coordinator command-center checkpoint.
+- [x] Save the final post-command-center checkpoint after verification.
