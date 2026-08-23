@@ -12,6 +12,7 @@ import { adminProcedure, protectedProcedure, publicProcedure, roleProcedure, rou
 import { answerCoordinatorQuestion, processAiAnalysisQueue } from "./ai/service";
 import { validateEnrichment } from "./ai/validation";
 import { notifyIncidentCreated, notifyIncidentEscalated, notifyIncidentLifecycle, processNotificationEscalations } from "./notifications/service";
+import { getDemoModeStatus, isDemoActor, isDemoPresenter, pauseDemoMode, resetDemoMode, resumeDemoMode, skipDemoModeStage, startDemoMode } from "./demo/service";
 
 function publicUser(user: User) {
   return { id: user.id, name: user.name, email: user.email, phone: user.phone, role: user.role, profileStatus: user.profileStatus, createdAt: user.createdAt, updatedAt: user.updatedAt };
@@ -38,6 +39,12 @@ function dispatchNotification(work: Promise<unknown>) {
 
 function dispatchLifecycle(incident: Incident) {
   if (incident.status === "accepted" || incident.status === "en_route" || incident.status === "arrived" || incident.status === "resolved") dispatchNotification(notifyIncidentLifecycle(incident, incident.status));
+}
+
+async function isViewingActiveDemo(user: User) {
+  if (!isDemoActor(user)) return false;
+  const run = await db.getDemoRun();
+  return Boolean(run?.incidentId && run.status !== "idle");
 }
 
 export const appRouter = router({
@@ -143,7 +150,7 @@ export const appRouter = router({
       requireVerifiedVolunteer(ctx.user);
       const readiness = await db.getVolunteerReadiness(ctx.user.id);
       if (readiness?.availability !== "available") throw new TRPCError({ code: "FORBIDDEN", message: "Go available before viewing nearby emergency requests." });
-      const nearby = await db.listNearbyOpenIncidents(ctx.user.id);
+      const nearby = await db.listNearbyOpenIncidents(ctx.user.id, await isViewingActiveDemo(ctx.user));
       return nearby.map(incident => ({ publicId: incident.publicId, emergencyType: incident.emergencyType, distanceMeters: incident.distanceMeters, createdAt: incident.createdAt, responseArea: "Approximate incident area available before acceptance" }));
     }),
     activeIncident: roleProcedure(["volunteer"]).query(({ ctx }) => db.getActiveIncidentForVolunteer(ctx.user.id)),
@@ -254,9 +261,35 @@ export const appRouter = router({
       return processNotificationEscalations();
     }),
   }),
+  demo: router({
+    status: protectedProcedure.query(async ({ ctx }) => {
+      if (!isDemoActor(ctx.user)) throw new TRPCError({ code: "FORBIDDEN", message: "Demo Mode is restricted to designated RANEEV demonstration accounts." });
+      return getDemoModeStatus();
+    }),
+    start: roleProcedure(["coordinator", "admin"]).mutation(async ({ ctx }) => {
+      if (!isDemoPresenter(ctx.user)) throw new TRPCError({ code: "FORBIDDEN", message: "Only the designated Demo Mode presenter can start a simulation." });
+      return startDemoMode();
+    }),
+    pause: roleProcedure(["coordinator", "admin"]).mutation(async ({ ctx }) => {
+      if (!isDemoPresenter(ctx.user)) throw new TRPCError({ code: "FORBIDDEN", message: "Only the designated Demo Mode presenter can pause a simulation." });
+      return pauseDemoMode();
+    }),
+    resume: roleProcedure(["coordinator", "admin"]).mutation(async ({ ctx }) => {
+      if (!isDemoPresenter(ctx.user)) throw new TRPCError({ code: "FORBIDDEN", message: "Only the designated Demo Mode presenter can resume a simulation." });
+      return resumeDemoMode();
+    }),
+    skip: roleProcedure(["coordinator", "admin"]).mutation(async ({ ctx }) => {
+      if (!isDemoPresenter(ctx.user)) throw new TRPCError({ code: "FORBIDDEN", message: "Only the designated Demo Mode presenter can advance a simulation." });
+      return skipDemoModeStage();
+    }),
+    reset: roleProcedure(["coordinator", "admin"]).mutation(async ({ ctx }) => {
+      if (!isDemoPresenter(ctx.user)) throw new TRPCError({ code: "FORBIDDEN", message: "Only the designated Demo Mode presenter can reset a simulation." });
+      return resetDemoMode();
+    }),
+  }),
   coordinator: router({
-    activeIncidents: roleProcedure(["coordinator", "admin"]).query(({ ctx }) => db.listIncidentsVisibleTo(ctx.user)),
-    commandCenter: roleProcedure(["coordinator", "admin"]).query(() => db.getCoordinatorCommandCenter()),
+    activeIncidents: roleProcedure(["coordinator", "admin"]).query(async ({ ctx }) => db.listIncidentsVisibleTo(ctx.user, await isViewingActiveDemo(ctx.user))),
+    commandCenter: roleProcedure(["coordinator", "admin"]).query(async ({ ctx }) => db.getCoordinatorCommandCenter(await isViewingActiveDemo(ctx.user))),
   }),
   admin: router({
     users: adminProcedure.query(() => db.listUsersForAdmin()),

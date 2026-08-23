@@ -10,6 +10,7 @@ import { useAuth } from "./_core/hooks/useAuth";
 import { EmergencyDraftProvider } from "./contexts/EmergencyDraftContext";
 import { AccessDenied, AdminPortal, AuthPage, CitizenPortal, CoordinatorPortal, LandingPage, RoleSelection, VolunteerPortal } from "./pages/RaneevScreens";
 import { GoldenHourResponse } from "./pages/GoldenHourResponse";
+import { DemoMode } from "./pages/DemoMode";
 
 type RaneevRole = "citizen" | "volunteer" | "coordinator" | "admin";
 function ProtectedWorkspace({ roles, children }: { roles: RaneevRole[]; children: React.ReactNode }) { const { user, loading } = useAuth({ redirectOnUnauthenticated: true, redirectPath: "/login" }); if (loading || !user) return null; if (!roles.includes(user.role)) return <AccessDenied />; return <>{children}</>; }
@@ -20,6 +21,7 @@ function Router() { return <Switch>
   <Route path="/register">{() => <AuthPage kind="register" />}</Route>
   <Route path="/roles" component={RoleSelection} />
   <Route path="/access-denied" component={AccessDenied} />
+  <Route path="/demo"><ProtectedWorkspace roles={["citizen", "volunteer", "coordinator", "admin"]}><DemoMode /></ProtectedWorkspace></Route>
   <Route path="/citizen/live/:publicId">{({ publicId }) => <ProtectedWorkspace roles={["citizen"]}><CitizenPortal page="live" publicId={publicId} /></ProtectedWorkspace>}</Route>
   <Route path="/citizen/:page?">{({ page }) => <ProtectedWorkspace roles={["citizen"]}><CitizenPortal page={page} /></ProtectedWorkspace>}</Route>
   <Route path="/volunteer/:page?">{({ page }) => <ProtectedWorkspace roles={["volunteer"]}><VolunteerPortal page={page} /></ProtectedWorkspace>}</Route>

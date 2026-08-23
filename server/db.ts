@@ -1,8 +1,8 @@
 /* RANEEV database access — all credential and incident queries return the minimum fields needed for server authorization. */
 import { and, asc, desc, eq, inArray, isNotNull, isNull, lt, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
-import type { AiAnalysisJob, AppRole, EmergencyType, GhrEscalation, GhrSeverity, Incident, IncidentEvent, InsertUser, NotificationChannel, NotificationPriority, NotificationProvider, NotificationStatus, NotificationType, User, VolunteerAvailability } from "../drizzle/schema";
-import { aiAnalysisJobs, aiIncidentAudits, incidentEvents, incidents, notificationPreferences, notifications, users } from "../drizzle/schema";
+import type { AiAnalysisJob, AppRole, DemoRunStatus, DemoStage, EmergencyType, GhrEscalation, GhrSeverity, Incident, IncidentEvent, InsertUser, NotificationChannel, NotificationPriority, NotificationProvider, NotificationStatus, NotificationType, User, VolunteerAvailability } from "../drizzle/schema";
+import { aiAnalysisJobs, aiIncidentAudits, demoRuns, incidentEvents, incidents, notificationPreferences, notifications, users } from "../drizzle/schema";
 import type { ResponderType } from "./ai/contracts";
 import { parseResponderSkills, scoreResponders } from "./ai/matching";
 import { averageAcceptanceMinutes, coordinatorPriority } from "./coordinator/metrics";
@@ -70,6 +70,68 @@ export async function updateUserRole(userId: number, role: AppRole) {
   const database = await requireDb();
   await database.update(users).set({ role, sessionVersion: sql`${users.sessionVersion} + 1` }).where(eq(users.id, userId));
   return getUserById(userId);
+}
+
+export const DEMO_RUN_KEY = "raneev-primary-demo";
+
+export async function getDemoRun() {
+  const database = await requireDb();
+  const result = await database.select().from(demoRuns).where(eq(demoRuns.runKey, DEMO_RUN_KEY)).limit(1);
+  return result[0] ?? null;
+}
+
+export async function saveDemoRun(input: { status: DemoRunStatus; stage: DemoStage; incidentId: number | null; startedAt: Date | null; pausedAt: Date | null; accumulatedPausedMs: number; completedAt: Date | null }) {
+  const database = await requireDb();
+  await database.insert(demoRuns).values({ runKey: DEMO_RUN_KEY, ...input }).onDuplicateKeyUpdate({ set: input });
+  return getDemoRun();
+}
+
+export async function createDemoIncident(input: { publicId: string; createdByUserId: number; locationLabel: string; latitudeE6: number; longitudeE6: number; description: string }) {
+  const database = await requireDb();
+  await database.insert(incidents).values({
+    publicId: input.publicId,
+    createdByUserId: input.createdByUserId,
+    emergencyType: "road_accident",
+    locationLabel: input.locationLabel,
+    latitudeE6: input.latitudeE6,
+    longitudeE6: input.longitudeE6,
+    accuracyMeters: 12,
+    description: input.description,
+    status: "searching",
+    ghrSeverity: "critical",
+    isDemo: true,
+  });
+  const created = await getIncidentByPublicId(input.publicId);
+  if (!created || !created.isDemo) throw new Error("Demo incident could not be persisted.");
+  await addIncidentEvent({ incidentId: created.id, actorUserId: input.createdByUserId, eventType: "created", note: "DEMO: Road accident scenario created for controlled presentation." });
+  await addIncidentEvent({ incidentId: created.id, actorUserId: null, eventType: "search_started", note: "DEMO: Golden Hour Response active; searching the designated demo responder." });
+  await addIncidentEvent({ incidentId: created.id, actorUserId: null, eventType: "severity_assessed", note: "DEMO: AI-assisted classification fallback — road accident, critical, First Aid / Medical responder recommended." });
+  await addAiIncidentAudit({ incidentId: created.id, actorUserId: null, operation: "incident_enrichment", status: "fallback", modelIdentifier: null, inputMetadata: "demo-mode deterministic road accident scenario", outputJson: JSON.stringify({ enrichment: { classification: { category: "accident", severity: "critical", recommendedResponderType: "medical", confidence: 100, reason: "Deterministic Demo Mode fallback." }, summary: { summary: "Demo road accident requiring immediate first-aid response.", knownFacts: ["Road accident", "Two affected people", "Demo training location"], unknownInformation: [], priority: "critical" }, recommendation: { requiredSkills: ["medical"], recommendedResponderType: "medical", reason: "Configured Demo Mode responder profile." } } }), confidencePercent: 100, failureCode: "DEMO_DETERMINISTIC_FALLBACK", durationMs: 0 });
+  return created;
+}
+
+export async function addDemoIncidentEvent(incidentId: number, actorUserId: number | null, eventType: IncidentEvent["eventType"], note: string) {
+  await addIncidentEvent({ incidentId, actorUserId, eventType, note: `DEMO: ${note}` });
+}
+
+export async function updateDemoResponderPosition(publicId: string, volunteerUserId: number, latitudeE6: number, longitudeE6: number, responderEtaMinutes: number) {
+  const incident = await getIncidentByPublicId(publicId);
+  if (!incident || !incident.isDemo || incident.assignedVolunteerId !== volunteerUserId) return null;
+  const database = await requireDb();
+  await database.update(incidents).set({ responderLatitudeE6: latitudeE6, responderLongitudeE6: longitudeE6, responderEtaMinutes, responderLocationUpdatedAt: new Date() }).where(eq(incidents.id, incident.id));
+  return getIncidentByPublicId(publicId);
+}
+
+export async function deleteDemoIncidentArtifacts(incidentId: number) {
+  const incident = await getIncidentById(incidentId);
+  if (!incident?.isDemo) return;
+  const database = await requireDb();
+  await database.update(demoRuns).set({ incidentId: null }).where(eq(demoRuns.incidentId, incidentId));
+  await database.delete(notifications).where(eq(notifications.incidentId, incidentId));
+  await database.delete(aiAnalysisJobs).where(eq(aiAnalysisJobs.incidentId, incidentId));
+  await database.delete(aiIncidentAudits).where(eq(aiIncidentAudits.incidentId, incidentId));
+  await database.delete(incidentEvents).where(eq(incidentEvents.incidentId, incidentId));
+  await database.delete(incidents).where(eq(incidents.id, incidentId));
 }
 
 export async function getNotificationPreferences(userId: number) {
@@ -147,12 +209,12 @@ export async function listAvailableVolunteersNearIncident(incident: Incident) {
 
 export async function listSearchingIncidentsCreatedBefore(cutoff: Date) {
   const database = await requireDb();
-  return database.select().from(incidents).where(and(eq(incidents.status, "searching"), isNull(incidents.assignedVolunteerId), lt(incidents.createdAt, cutoff))).orderBy(asc(incidents.createdAt)).limit(100);
+  return database.select().from(incidents).where(and(eq(incidents.isDemo, false), eq(incidents.status, "searching"), isNull(incidents.assignedVolunteerId), lt(incidents.createdAt, cutoff))).orderBy(asc(incidents.createdAt)).limit(100);
 }
 
 export async function listEscalatedIncidentsBefore(cutoff: Date) {
   const database = await requireDb();
-  return database.select().from(incidents).where(and(isNotNull(incidents.ghrEscalatedAt), lt(incidents.ghrEscalatedAt, cutoff), inArray(incidents.status, ["searching", "accepted", "en_route", "arrived", "assisting"]))).orderBy(asc(incidents.ghrEscalatedAt)).limit(100);
+  return database.select().from(incidents).where(and(eq(incidents.isDemo, false), isNotNull(incidents.ghrEscalatedAt), lt(incidents.ghrEscalatedAt, cutoff), inArray(incidents.status, ["searching", "accepted", "en_route", "arrived", "assisting"]))).orderBy(asc(incidents.ghrEscalatedAt)).limit(100);
 }
 
 export async function getVolunteerReadiness(userId: number) {
@@ -506,24 +568,25 @@ function distanceMeters(aLatE6: number, aLngE6: number, bLatE6: number, bLngE6: 
   return Math.round(radius * 2 * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h)));
 }
 
-export async function listNearbyOpenIncidents(volunteerUserId: number) {
+export async function listNearbyOpenIncidents(volunteerUserId: number, demoOnly = false) {
   const volunteer = await getUserById(volunteerUserId);
   if (!volunteer || volunteer.role !== "volunteer" || volunteer.volunteerLatitudeE6 === null || volunteer.volunteerLongitudeE6 === null) return [];
   const database = await requireDb();
-  const open = await database.select().from(incidents).where(and(eq(incidents.status, "searching"), isNull(incidents.assignedVolunteerId))).orderBy(desc(incidents.createdAt)).limit(100);
+  const open = await database.select().from(incidents).where(and(eq(incidents.status, "searching"), isNull(incidents.assignedVolunteerId), eq(incidents.isDemo, demoOnly))).orderBy(desc(incidents.createdAt)).limit(100);
   return open.map(incident => ({ ...incident, distanceMeters: distanceMeters(volunteer.volunteerLatitudeE6!, volunteer.volunteerLongitudeE6!, incident.latitudeE6, incident.longitudeE6) })).filter(incident => incident.distanceMeters <= 10_000).sort((a, b) => a.distanceMeters - b.distanceMeters);
 }
 
-export async function listIncidentsVisibleTo(user: User): Promise<Incident[]> {
+export async function listIncidentsVisibleTo(user: User, demoOnly = false): Promise<Incident[]> {
   const database = await requireDb();
-  if (user.role === "admin" || user.role === "coordinator") return database.select().from(incidents).orderBy(desc(incidents.updatedAt)).limit(200);
-  if (user.role === "citizen") return database.select().from(incidents).where(eq(incidents.createdByUserId, user.id)).orderBy(desc(incidents.updatedAt)).limit(100);
-  return database.select().from(incidents).where(eq(incidents.assignedVolunteerId, user.id)).orderBy(desc(incidents.updatedAt)).limit(100);
+  const demoCondition = eq(incidents.isDemo, demoOnly);
+  if (user.role === "admin" || user.role === "coordinator") return database.select().from(incidents).where(demoCondition).orderBy(desc(incidents.updatedAt)).limit(200);
+  if (user.role === "citizen") return database.select().from(incidents).where(and(eq(incidents.createdByUserId, user.id), demoCondition)).orderBy(desc(incidents.updatedAt)).limit(100);
+  return database.select().from(incidents).where(and(eq(incidents.assignedVolunteerId, user.id), demoCondition)).orderBy(desc(incidents.updatedAt)).limit(100);
 }
 
-export async function getCoordinatorCommandCenter() {
+export async function getCoordinatorCommandCenter(demoOnly = false) {
   const database = await requireDb();
-  const incidentRows = await database.select({ incident: incidents, responderName: users.name, responderAvailability: users.volunteerAvailability }).from(incidents).leftJoin(users, eq(incidents.assignedVolunteerId, users.id)).orderBy(desc(incidents.updatedAt)).limit(200);
+  const incidentRows = await database.select({ incident: incidents, responderName: users.name, responderAvailability: users.volunteerAvailability }).from(incidents).leftJoin(users, eq(incidents.assignedVolunteerId, users.id)).where(eq(incidents.isDemo, demoOnly)).orderBy(desc(incidents.updatedAt)).limit(200);
   const responderRows = await database.select({ id: users.id, name: users.name, profileStatus: users.profileStatus, availability: users.volunteerAvailability, latitudeE6: users.volunteerLatitudeE6, longitudeE6: users.volunteerLongitudeE6, locationUpdatedAt: users.volunteerLocationUpdatedAt }).from(users).where(eq(users.role, "volunteer")).orderBy(desc(users.volunteerLocationUpdatedAt)).limit(200);
   const allIncidents = incidentRows.map(row => ({ ...row.incident, responderName: row.responderName, responderAvailability: row.responderAvailability }));
   const activeIncidents = allIncidents.filter(incident => !["resolved", "cancelled"].includes(incident.status)).sort((left, right) => coordinatorPriority(right.status, right.ghrSeverity) - coordinatorPriority(left.status, left.ghrSeverity) || right.updatedAt.getTime() - left.updatedAt.getTime());

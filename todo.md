@@ -84,3 +84,12 @@
 - [x] Verify responder-search and escalation-timeout processing together, including repeat-run deduplication.
 - [x] Save the post-escalation-timeout verified notification and communication checkpoint.
 - [x] Save the final verified post-notification checkpoint after all escalation-timeout validation.
+- [x] Add an isolated persisted Demo Mode run model and deterministic stage configuration without affecting normal incidents.
+- [x] Implement presenter-only start, pause, resume, skip, reset, and status APIs over the shared incident lifecycle.
+- [x] Reuse the real Demo Citizen, Demo Volunteer, and Demo Coordinator records for a predefined road-accident scenario and demo-only notifications.
+- [x] Add a subtle Launch Demo entry plus a responsive control and presentation workspace using the established RANEEV visual system.
+- [x] Synchronize deterministic responder coordinates, GHR timing, AI fallback, lifecycle events, and role-visible read models without external per-frame routing calls.
+- [x] Add unit and end-to-end verification for repeatable start, pause, resume, reset, stage sequencing, data isolation, notifications, map movement, and responsive behavior.
+- [x] Document Demo Mode evidence, automated coverage, responsive evidence, and controlled-data isolation safeguards.
+- [x] Save the final verified deterministic Demo Mode delivery checkpoint.
+- [x] Save the actual verified Demo Mode delivery checkpoint and confirm its version URI.

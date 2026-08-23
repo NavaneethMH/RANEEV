@@ -1,4 +1,4 @@
-import type { Incident, NotificationPriority, NotificationType, User } from "../../drizzle/schema";
+import type { DemoStage, Incident, NotificationPriority, NotificationType, User } from "../../drizzle/schema";
 import * as db from "../db";
 import { getNotificationConfig } from "./config";
 
@@ -104,6 +104,23 @@ export async function notifyIncidentEscalated(incident: Incident) {
   await notifyMany([citizen, volunteer, ...coordinators].filter((user): user is User => Boolean(user)), incident, {
     key: `${incident.id}:escalated`, type: "coordinator_escalated", priority: "critical", title: "Emergency escalation recorded", message: "This incident requires elevated coordination. Follow authorized RANEEV operational updates and local emergency protocols.",
   });
+}
+
+export async function notifyDemoLifecycle(incident: Incident, stage: DemoStage, actors: { citizen: User; volunteer: User; coordinator: User; admin: User }) {
+  const notices: Record<DemoStage, Notice> = {
+    new_emergency: { key: `${incident.id}:demo:new`, type: "emergency_confirmation", priority: "critical", title: "DEMO NOTIFICATION · New emergency", message: "Demo emergency detected. Golden Hour Response is active." },
+    responder_detected: { key: `${incident.id}:demo:detected`, type: "nearby_emergency", priority: "high", title: "DEMO NOTIFICATION · Responder detected", message: "A nearby demo responder has been detected for this controlled scenario." },
+    responder_accepted: { key: `${incident.id}:demo:accepted`, type: "responder_assigned", priority: "high", title: "DEMO NOTIFICATION · Responder accepted", message: "Arjun Kumar — Demo Responder accepted the controlled demo emergency." },
+    responder_moving: { key: `${incident.id}:demo:moving`, type: "responder_en_route", priority: "high", title: "DEMO NOTIFICATION · Responder en route", message: "The demo responder is travelling along the predefined response route." },
+    responder_arrived: { key: `${incident.id}:demo:arrived`, type: "responder_arrived", priority: "high", title: "DEMO NOTIFICATION · Responder arrived", message: "The demo responder has arrived at the controlled incident location." },
+    incident_resolved: { key: `${incident.id}:demo:resolved`, type: "incident_resolved", priority: "normal", title: "DEMO NOTIFICATION · Response completed", message: "The controlled demo emergency response is complete." },
+  };
+  const notice = notices[stage];
+  await Promise.all([actors.citizen, actors.volunteer, actors.coordinator, actors.admin].map(recipient => db.createNotificationIfAbsent({
+    dedupeKey: `${notice.key}:${recipient.id}:in-app`, recipientUserId: recipient.id, incidentId: incident.id,
+    type: notice.type, priority: notice.priority, channel: "in_app", status: "delivered_demo", provider: "demo",
+    title: limit(notice.title, 180), message: limit(notice.message, 500), sentAt: new Date(),
+  })));
 }
 
 export async function processNotificationEscalations() {

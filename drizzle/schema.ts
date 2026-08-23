@@ -25,6 +25,8 @@ export const notificationPriorities = ["critical", "high", "normal", "low"] as c
 export const notificationChannels = ["in_app", "sms"] as const;
 export const notificationStatuses = ["pending", "delivered_demo", "sent", "failed"] as const;
 export const notificationProviders = ["demo", "twilio", "fallback"] as const;
+export const demoRunStatuses = ["idle", "running", "paused", "completed"] as const;
+export const demoStages = ["new_emergency", "responder_detected", "responder_accepted", "responder_moving", "responder_arrived", "incident_resolved"] as const;
 
 /**
  * `openId` remains the stable internal subject key for template compatibility.
@@ -84,12 +86,14 @@ export const incidents = mysqlTable("incidents", {
   ghrFacilityEtaMinutes: int("ghrFacilityEtaMinutes"),
   ghrFacilitySelectedAt: timestamp("ghrFacilitySelectedAt"),
   resolvedAt: timestamp("resolvedAt"),
+  isDemo: boolean("isDemo").notNull().default(false),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 }, table => [
   index("incidents_creator_idx").on(table.createdByUserId),
   index("incidents_volunteer_idx").on(table.assignedVolunteerId),
   index("incidents_status_idx").on(table.status),
+  index("incidents_demo_status_idx").on(table.isDemo, table.status),
 ]);
 
 /** Minimal immutable event timeline used to explain each verified lifecycle transition to the citizen. */
@@ -162,6 +166,21 @@ export const notificationPreferences = mysqlTable("notificationPreferences", {
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
 
+/** One isolated, presenter-controlled simulation run that references a normal shared incident only while the demo is active. */
+export const demoRuns = mysqlTable("demoRuns", {
+  id: int("id").autoincrement().primaryKey(),
+  runKey: varchar("runKey", { length: 40 }).notNull().unique(),
+  status: mysqlEnum("status", demoRunStatuses).notNull().default("idle"),
+  stage: mysqlEnum("stage", demoStages).notNull().default("new_emergency"),
+  incidentId: int("incidentId").references(() => incidents.id),
+  startedAt: timestamp("startedAt"),
+  pausedAt: timestamp("pausedAt"),
+  accumulatedPausedMs: int("accumulatedPausedMs").notNull().default(0),
+  completedAt: timestamp("completedAt"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, table => [index("demo_runs_status_idx").on(table.status), index("demo_runs_incident_idx").on(table.incidentId)]);
+
 export type AppRole = (typeof appRoles)[number];
 export type ProfileStatus = (typeof profileStatuses)[number];
 export type VolunteerAvailability = (typeof volunteerAvailabilityStates)[number];
@@ -177,6 +196,8 @@ export type NotificationPriority = (typeof notificationPriorities)[number];
 export type NotificationChannel = (typeof notificationChannels)[number];
 export type NotificationStatus = (typeof notificationStatuses)[number];
 export type NotificationProvider = (typeof notificationProviders)[number];
+export type DemoRunStatus = (typeof demoRunStatuses)[number];
+export type DemoStage = (typeof demoStages)[number];
 export type User = typeof users.$inferSelect;
 export type InsertUser = typeof users.$inferInsert;
 export type Incident = typeof incidents.$inferSelect;
@@ -185,3 +206,4 @@ export type AiAnalysisJob = typeof aiAnalysisJobs.$inferSelect;
 export type AiIncidentAudit = typeof aiIncidentAudits.$inferSelect;
 export type Notification = typeof notifications.$inferSelect;
 export type NotificationPreference = typeof notificationPreferences.$inferSelect;
+export type DemoRun = typeof demoRuns.$inferSelect;

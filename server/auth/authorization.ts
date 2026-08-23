@@ -1,11 +1,13 @@
 /* RANEEV authorization — role and ownership decisions are enforced server-side before protected data is returned. */
 import type { AppRole, Incident, User } from "../../drizzle/schema";
+import { isDemoActor } from "../demo/policy";
 
 export function hasRole(user: User, roles: readonly AppRole[]) {
   return roles.includes(user.role);
 }
 
 export function canReadIncident(user: User, incident: Incident) {
+  if (incident.isDemo) return isDemoActor(user);
   if (user.role === "admin" || user.role === "coordinator") return true;
   if (user.role === "citizen") return incident.createdByUserId === user.id;
   return incident.assignedVolunteerId === user.id;
