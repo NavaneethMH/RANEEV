@@ -118,3 +118,13 @@
 - [x] Remediate and retest only the highest-impact confirmed UI/UX issues without redesigning the established RANEEV experience.
 - [x] Add an accessible label to the confirmed icon-only coordinator assistant send control and revalidate keyboard focus behavior.
 - [x] Save the verified emergency UI/UX audit delivery checkpoint.
+- [x] Audit production readiness across dependencies, configuration, security, API validation, resilience, performance, responsive behavior, and component consistency without changing product flows.
+- [x] Verify the complete shared Citizen → Volunteer → Coordinator emergency journey and critical failure states with isolated fixtures.
+- [x] Fix and regress-test only confirmed production-readiness defects, then document residual deployment requirements.
+- [x] Update the framework-required runtime dependencies to patched versions and re-audit the dependency tree.
+- [x] Remove the Streamdown markdown renderer from the coordinator assistant because its transitive Mermaid and DOM sanitization advisory surface is unnecessary for RANEEV operational output.
+- [x] Upgrade Drizzle ORM and the Express dependency chain to patched compatible versions, then resolve the residual Lodash advisory path without changing application behavior.
+- [x] Remove the unreferenced Recharts wrapper and its advisory-bearing Lodash dependency from the production build.
+- [x] Correct Express 5 wildcard storage-proxy parameter handling and verify that the upgraded server preserves protected asset delivery.
+- [x] Disable the default Express fingerprint header from production responses and verify retained asset-route behavior.
+- [x] Save the verified production-readiness delivery checkpoint.

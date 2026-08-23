@@ -16,6 +16,7 @@ async function findAvailablePort(startPort = 3000): Promise<number> { for (let p
 
 async function startServer() {
   const app = express();
+  app.disable("x-powered-by");
   const server = createServer(app);
   app.use(express.json({ limit: "50mb" }));
   app.use(express.urlencoded({ limit: "50mb", extended: true }));

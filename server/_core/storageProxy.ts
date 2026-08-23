@@ -1,11 +1,17 @@
 import type { Express } from "express";
 import { ENV } from "./env";
 
+export function parseStorageKey(splat: string | string[] | undefined) {
+  const key = Array.isArray(splat) ? splat.join("/") : splat;
+  if (!key || key.startsWith("/") || key.split("/").some(segment => !segment || segment === "." || segment === "..")) return undefined;
+  return key;
+}
+
 export function registerStorageProxy(app: Express) {
-  app.get("/manus-storage/*", async (req, res) => {
-    const key = (req.params as Record<string, string>)[0];
+  app.get("/manus-storage/*splat", async (req, res) => {
+    const key = parseStorageKey(req.params.splat);
     if (!key) {
-      res.status(400).send("Missing storage key");
+      res.status(400).send("Invalid storage key");
       return;
     }
 
