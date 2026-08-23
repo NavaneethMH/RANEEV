@@ -86,6 +86,10 @@
   .rn-mono { font-family: "IBM Plex Mono", ui-monospace, SFMono-Regular, monospace; }
   .rn-focus { @apply focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#0e4e78]; }
   .rn-touch { min-height: 2.9rem; }
+  header > nav a { min-height: 2.75rem; display: inline-flex; align-items: center; }
+  header > a[href="/login"], a[href="/demo"] { min-height: 2.75rem !important; display: inline-flex; align-items: center; }
+  button.rn-focus[class*="text-[#0e4e78]"] { min-height: 2.75rem; display: inline-flex; align-items: center; }
+  .text-center > a[href="/login"], .text-center > a[href="/register"], button.rn-focus.inline-flex { min-height: 2.75rem; display: inline-flex; align-items: center; }
   .rn-route-line { background-image: repeating-linear-gradient(90deg, #c9d5d6 0 10px, transparent 10px 16px); height: 1px; }
   .rn-context-band { @apply mt-4 flex items-center gap-3 border-l-2 border-[#0e4e78] bg-[#eef3f3] px-3 py-2 text-[0.62rem] font-extrabold uppercase tracking-[0.1em] text-[#52626c]; }
 }

@@ -1,10 +1,10 @@
 /* RANEEV Clinical Wayfinding — reusable command-spine primitives: semantic state, broad touch controls, clear operational hierarchy. */
-import { type ReactNode, useState } from "react";
+import { type ReactNode } from "react";
 import { Link, useLocation } from "wouter";
 import {
-  Activity, AlertTriangle, ArrowLeft, Check, ChevronRight, CircleDot, Clock3, Command, FileWarning,
+  Activity, AlertTriangle, ArrowLeft, ChevronRight, CircleDot, Clock3, Command, FileWarning,
   HeartPulse, History, Home, Info, LayoutDashboard, LoaderCircle, MapPin, Menu, Navigation, Radio,
-  Search, ShieldCheck, Signal, Users, UserRound, WifiOff, XCircle,
+  Search, ShieldCheck, Signal, Users, UserRound,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -43,20 +43,8 @@ export function PageHeading({ eyebrow, title, description, action }: { eyebrow: 
   return <header className="mb-6 flex flex-col gap-4 border-b border-[#cbd5d6] pb-5 md:flex-row md:items-end md:justify-between"><div><div className="rn-eyebrow"><CircleDot className="h-3.5 w-3.5" />{eyebrow}</div><h1 className="mt-2 text-3xl font-extrabold tracking-[-0.045em] text-[#17212b] sm:text-4xl">{title}</h1><p className="mt-2 max-w-2xl text-sm font-medium leading-6 text-[#60707c]">{description}</p><div className="rn-context-band"><span className="rn-mono text-[#0e4e78]">RANEEV/OPS</span><span className="rn-route-line w-7" /><span>Verified-action interface</span></div></div>{action}</header>;
 }
 
-const uiStates = [
-  { key: "success", label: "Success", icon: Check, tone: "safe" as EmergencyTone, text: "Saved locally in the UI shell. Backend confirmation will appear here." },
-  { key: "loading", label: "Loading", icon: LoaderCircle, tone: "info" as EmergencyTone, text: "Retrieving the latest protected incident data…" },
-  { key: "empty", label: "Empty", icon: Search, tone: "neutral" as EmergencyTone, text: "No matching records are available for this view." },
-  { key: "error", label: "Error", icon: XCircle, tone: "critical" as EmergencyTone, text: "We could not complete this request. Your last verified state is unchanged." },
-  { key: "offline", label: "Offline", icon: WifiOff, tone: "warning" as EmergencyTone, text: "Connection lost. Do not assume a request was sent until it is confirmed." },
-];
-
-export function StatePreview({ compact = false }: { compact?: boolean }) {
-  const [active, setActive] = useState("success");
-  const item = uiStates.find((state) => state.key === active) ?? uiStates[0];
-  const Icon = item.icon;
-  return <details className={`border-t border-dashed border-[#c6d0d1] pt-3 ${compact ? "mt-1" : "mt-2"}`} aria-label="Resilient state treatment"><summary className="rn-focus flex min-h-8 cursor-pointer list-none items-center justify-between gap-3 text-[0.64rem] font-extrabold uppercase tracking-[0.1em] text-[#52626c]"><span className="flex items-center gap-2"><Signal className="h-3.5 w-3.5 text-[#0e4e78]" />Resilient state treatment</span><span className="rn-mono text-[0.58rem] text-[#60707c]">loading · empty · error · offline</span></summary><div className="mt-3 border-l-2 border-[#0e4e78] bg-[#f7faf9] p-3"><div className="flex flex-wrap gap-1.5">{uiStates.map((state) => <button key={state.key} onClick={() => setActive(state.key)} className={`rn-focus min-h-9 border px-2 text-[0.62rem] font-extrabold uppercase tracking-[0.07em] ${active === state.key ? "border-[#17212b] bg-[#17212b] text-white" : "border-[#cbd5d6] bg-white text-[#60707c] hover:bg-[#edf0ee]"}`}>{state.label}</button>)}</div><div className="mt-3 flex items-start gap-2.5 border-t border-[#d7dddc] pt-3" role={item.key === "error" ? "alert" : "status"} aria-live={item.key === "error" ? "assertive" : "polite"}><span className="mt-0.5"><Icon className={`h-4 w-4 ${item.key === "loading" ? "animate-spin text-[#0e4e78]" : "text-[#43535e]"}`} /></span><div><StatusBadge tone={item.tone} label={item.label} /><p className="mt-1.5 text-xs font-medium leading-5 text-[#60707c]">{item.text}</p></div></div></div></details>;
-}
+/** Real loading, empty, error, and offline states appear in context; no persistent simulator is shown in emergency workspaces. */
+export function StatePreview(_: { compact?: boolean }) { return null; }
 
 export function MapSurface({ label = "Live route preview", tall = false }: { label?: string; tall?: boolean }) {
   return <div className={`relative overflow-hidden rounded-xl border border-[#bfc9cb] bg-[#dfe7e5] ${tall ? "min-h-[27rem]" : "min-h-[18rem]"}`}>

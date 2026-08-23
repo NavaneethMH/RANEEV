@@ -213,7 +213,7 @@ export function AIChatBox({
                       key={index}
                       onClick={() => onSendMessage(prompt)}
                       disabled={isLoading}
-                      className="rounded-lg border border-border bg-card px-4 py-2 text-sm transition-colors hover:bg-accent disabled:cursor-not-allowed disabled:opacity-50"
+                      className="min-h-11 rounded-lg border border-border bg-card px-4 py-2 text-sm transition-colors hover:bg-accent disabled:cursor-not-allowed disabled:opacity-50"
                     >
                       {prompt}
                     </button>
@@ -314,14 +314,15 @@ export function AIChatBox({
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={handleKeyDown}
           placeholder={placeholder}
-          className="flex-1 max-h-32 resize-none min-h-9"
+          className="flex-1 max-h-32 resize-none min-h-11"
           rows={1}
         />
         <Button
           type="submit"
           size="icon"
+          aria-label="Send operational question"
           disabled={!input.trim() || isLoading}
-          className="shrink-0 h-[38px] w-[38px]"
+          className="h-11 w-11 shrink-0"
         >
           {isLoading ? (
             <Loader2 className="size-4 animate-spin" />
