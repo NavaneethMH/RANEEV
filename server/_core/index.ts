@@ -8,6 +8,7 @@ import { appRouter } from "../routers";
 import { createContext } from "./context";
 import { ensureDevelopmentDemoAccounts } from "../demoAccounts";
 import { processAiQueueScheduled } from "../ai/scheduled";
+import { processNotificationEscalationsScheduled } from "../notifications/scheduled";
 import { serveStatic, setupVite } from "./vite";
 
 function isPortAvailable(port: number): Promise<boolean> { return new Promise(resolve => { const server = net.createServer(); server.listen(port, () => server.close(() => resolve(true))); server.on("error", () => resolve(false)); }); }
@@ -21,6 +22,7 @@ async function startServer() {
   registerStorageProxy(app);
   app.use("/api/trpc", createExpressMiddleware({ router: appRouter, createContext }));
   app.post("/api/scheduled/process-ai-queue", processAiQueueScheduled);
+  app.post("/api/scheduled/process-notification-escalations", processNotificationEscalationsScheduled);
   if (process.env.NODE_ENV === "development") await setupVite(app, server); else serveStatic(app);
   await ensureDevelopmentDemoAccounts().catch(error => console.warn("[Demo accounts] Skipped until database migration is ready:", error instanceof Error ? error.message : error));
   const port = await findAvailablePort(parseInt(process.env.PORT || "3000"));

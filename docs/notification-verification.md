@@ -1,0 +1,11 @@
+# Notification and Communication Verification
+
+The notification layer uses the existing shared `incidents`, `users`, and lifecycle transitions. It stores recipient-scoped, idempotent in-app and optional SMS delivery records separately from incident content; notifications do not create or own a second emergency workflow.
+
+The authenticated three-role run created `ERN-C8C9ED60A05C` and verified the full Citizen timeline: confirmation, nearby responder availability, responder assignment, en route, arrival, coordinator escalation, and resolution. Records used the default `demo` in-app provider with `delivered_demo` status. The Citizen read-state persisted, while the administrator audit returned delivery metadata without notification bodies or recipient identity fields. The optional SMS adapter remained unconfigured and did not affect the shared incident lifecycle.
+
+Desktop verification showed the Bell unread indicator and a prioritized protected inbox. The first 375 px screenshot identified that the dialog surface inherited an insufficiently opaque background; the inbox was explicitly set to the operational surface color and final recaptured at 375 px. The final mobile capture for `ERN-7B2BE4A6036C` shows an opaque, readable stack of priority-coloured notices with no horizontal overflow.
+
+The protected Admin Notification Activity screen was also exercised. It renders a bounded latest-record feed with event type, priority, recipient role, channel, provider, read/delivery state, and incident reference while deliberately excluding notification bodies and recipient identity. The final verification confirmed the responder-search timeout alert for `ERN-E04D5AD43258` was idempotent across repeated processing.
+
+The configured post-escalation timeout is processed separately from responder search. The protected worker checks active incidents whose persisted Golden Hour escalation time exceeds `ESCALATION_TIMEOUT_SECONDS`, writes a critical coordinator follow-up alert with a distinct dedupe key, and leaves the shared incident state unchanged. The final authenticated run confirmed its idempotency on `ERN-D97E684D6F38`; two repeat worker invocations created no duplicate follow-up alert.

@@ -50,6 +50,13 @@
       "when": 1787494200000,
       "tag": "0006_ai_intelligence_layer",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "5",
+      "when": 1787498200000,
+      "tag": "0007_notification_communications",
+      "breakpoints": true
     }
   ]
 }

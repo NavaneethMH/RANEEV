@@ -2,7 +2,7 @@
 import { randomUUID } from "node:crypto";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
-import type { AppRole, User } from "../drizzle/schema";
+import type { AppRole, Incident, User } from "../drizzle/schema";
 import { appRoles, emergencyTypes, ghrEscalationStates, ghrSeverityLevels } from "../drizzle/schema";
 import { canChangeRole, canReadIncident } from "./auth/authorization";
 import { clearCredentialSession, establishCredentialSession, hashPassword, validatePassword, verifyPassword } from "./auth/credentials";
@@ -11,6 +11,7 @@ import { systemRouter } from "./_core/systemRouter";
 import { adminProcedure, protectedProcedure, publicProcedure, roleProcedure, router } from "./_core/trpc";
 import { answerCoordinatorQuestion, processAiAnalysisQueue } from "./ai/service";
 import { validateEnrichment } from "./ai/validation";
+import { notifyIncidentCreated, notifyIncidentEscalated, notifyIncidentLifecycle, processNotificationEscalations } from "./notifications/service";
 
 function publicUser(user: User) {
   return { id: user.id, name: user.name, email: user.email, phone: user.phone, role: user.role, profileStatus: user.profileStatus, createdAt: user.createdAt, updatedAt: user.updatedAt };
@@ -29,6 +30,14 @@ async function requireGoldenHourIncidentAccess(user: User, publicId: string) {
   if (!incident) throw new TRPCError({ code: "NOT_FOUND", message: "Incident not found." });
   if (!canReadIncident(user, incident)) throw new TRPCError({ code: "FORBIDDEN", message: "You do not have permission to access this Golden Hour Response." });
   return incident;
+}
+
+function dispatchNotification(work: Promise<unknown>) {
+  void work.catch(error => console.warn("[Notifications] Non-blocking dispatch failed:", error instanceof Error ? error.message : error));
+}
+
+function dispatchLifecycle(incident: Incident) {
+  if (incident.status === "accepted" || incident.status === "en_route" || incident.status === "arrived" || incident.status === "resolved") dispatchNotification(notifyIncidentLifecycle(incident, incident.status));
 }
 
 export const appRouter = router({
@@ -78,7 +87,9 @@ export const appRouter = router({
   incidents: router({
     create: protectedProcedure.input(incidentInput).mutation(async ({ ctx, input }) => {
       if (ctx.user.role !== "citizen") throw new TRPCError({ code: "FORBIDDEN", message: "Only citizen accounts can create an emergency incident." });
-      return db.createIncident({ publicId: `ERN-${randomUUID().replace(/-/g, "").slice(0, 12).toUpperCase()}`, createdByUserId: ctx.user.id, emergencyType: input.emergencyType, locationLabel: input.locationLabel, latitudeE6: Math.round(input.latitude * 1_000_000), longitudeE6: Math.round(input.longitude * 1_000_000), accuracyMeters: input.accuracyMeters, description: input.description || null });
+      const incident = await db.createIncident({ publicId: `ERN-${randomUUID().replace(/-/g, "").slice(0, 12).toUpperCase()}`, createdByUserId: ctx.user.id, emergencyType: input.emergencyType, locationLabel: input.locationLabel, latitudeE6: Math.round(input.latitude * 1_000_000), longitudeE6: Math.round(input.longitude * 1_000_000), accuracyMeters: input.accuracyMeters, description: input.description || null });
+      dispatchNotification(notifyIncidentCreated(incident));
+      return incident;
     }),
     active: roleProcedure(["citizen"]).query(({ ctx }) => db.getActiveIncidentForCitizen(ctx.user.id)),
     mine: protectedProcedure.query(({ ctx }) => db.listIncidentsVisibleTo(ctx.user)),
@@ -101,11 +112,11 @@ export const appRouter = router({
       return snapshot;
     }),
     resolve: roleProcedure(["citizen"]).input(z.object({ publicId: z.string().min(3).max(40) })).mutation(async ({ ctx, input }) => {
-      try { const incident = await db.resolveIncident(input.publicId, ctx.user.id); if (!incident) throw new TRPCError({ code: "NOT_FOUND", message: "Incident not found." }); return incident; }
+      try { const incident = await db.resolveIncident(input.publicId, ctx.user.id); if (!incident) throw new TRPCError({ code: "NOT_FOUND", message: "Incident not found." }); dispatchLifecycle(incident); return incident; }
       catch (error) { if (error instanceof TRPCError) throw error; throw new TRPCError({ code: "FORBIDDEN", message: error instanceof Error ? error.message : "Incident could not be resolved." }); }
     }),
     simulateProgress: roleProcedure(["citizen"]).input(z.object({ publicId: z.string().min(3).max(40) })).mutation(async ({ ctx, input }) => {
-      try { const incident = await db.advanceDevelopmentSimulation(input.publicId, ctx.user.id); if (!incident) throw new TRPCError({ code: "NOT_FOUND", message: "Incident not found." }); return incident; }
+      try { const incident = await db.advanceDevelopmentSimulation(input.publicId, ctx.user.id); if (!incident) throw new TRPCError({ code: "NOT_FOUND", message: "Incident not found." }); dispatchLifecycle(incident); return incident; }
       catch (error) { if (error instanceof TRPCError) throw error; throw new TRPCError({ code: "BAD_REQUEST", message: error instanceof Error ? error.message : "Simulation could not progress." }); }
     }),
     simulateResponderMovement: roleProcedure(["citizen"]).input(z.object({ publicId: z.string().min(3).max(40) })).mutation(async ({ ctx, input }) => {
@@ -137,15 +148,15 @@ export const appRouter = router({
     }),
     activeIncident: roleProcedure(["volunteer"]).query(({ ctx }) => db.getActiveIncidentForVolunteer(ctx.user.id)),
     accept: roleProcedure(["volunteer"]).input(z.object({ publicId: z.string().min(3).max(40) })).mutation(async ({ ctx, input }) => {
-      try { requireVerifiedVolunteer(ctx.user); const readiness = await db.getVolunteerReadiness(ctx.user.id); if (readiness?.availability !== "available") throw new Error("Go available before accepting an emergency request."); const incident = await db.acceptIncident(input.publicId, ctx.user.id); if (!incident) throw new TRPCError({ code: "NOT_FOUND", message: "Incident not found." }); await db.setVolunteerAvailability(ctx.user.id, { availability: "busy" }); return incident; }
+      try { requireVerifiedVolunteer(ctx.user); const readiness = await db.getVolunteerReadiness(ctx.user.id); if (readiness?.availability !== "available") throw new Error("Go available before accepting an emergency request."); const incident = await db.acceptIncident(input.publicId, ctx.user.id); if (!incident) throw new TRPCError({ code: "NOT_FOUND", message: "Incident not found." }); await db.setVolunteerAvailability(ctx.user.id, { availability: "busy" }); dispatchLifecycle(incident); return incident; }
       catch (error) { if (error instanceof TRPCError) throw error; throw new TRPCError({ code: "CONFLICT", message: error instanceof Error ? error.message : "Incident is not available." }); }
     }),
     startRoute: roleProcedure(["volunteer"]).input(z.object({ publicId: z.string().min(3).max(40) })).mutation(async ({ ctx, input }) => {
-      try { requireVerifiedVolunteer(ctx.user); const incident = await db.volunteerAdvance(input.publicId, ctx.user.id, "en_route"); if (!incident) throw new TRPCError({ code: "NOT_FOUND", message: "Incident not found." }); return incident; }
+      try { requireVerifiedVolunteer(ctx.user); const incident = await db.volunteerAdvance(input.publicId, ctx.user.id, "en_route"); if (!incident) throw new TRPCError({ code: "NOT_FOUND", message: "Incident not found." }); dispatchLifecycle(incident); return incident; }
       catch (error) { if (error instanceof TRPCError) throw error; throw new TRPCError({ code: "FORBIDDEN", message: error instanceof Error ? error.message : "Response could not start." }); }
     }),
     arrive: roleProcedure(["volunteer"]).input(z.object({ publicId: z.string().min(3).max(40) })).mutation(async ({ ctx, input }) => {
-      try { requireVerifiedVolunteer(ctx.user); const incident = await db.volunteerAdvance(input.publicId, ctx.user.id, "arrived"); if (!incident) throw new TRPCError({ code: "NOT_FOUND", message: "Incident not found." }); return incident; }
+      try { requireVerifiedVolunteer(ctx.user); const incident = await db.volunteerAdvance(input.publicId, ctx.user.id, "arrived"); if (!incident) throw new TRPCError({ code: "NOT_FOUND", message: "Incident not found." }); dispatchLifecycle(incident); return incident; }
       catch (error) { if (error instanceof TRPCError) throw error; throw new TRPCError({ code: "FORBIDDEN", message: error instanceof Error ? error.message : "Arrival could not be confirmed." }); }
     }),
     beginAssistance: roleProcedure(["volunteer"]).input(z.object({ publicId: z.string().min(3).max(40) })).mutation(async ({ ctx, input }) => {
@@ -153,7 +164,7 @@ export const appRouter = router({
       catch (error) { if (error instanceof TRPCError) throw error; throw new TRPCError({ code: "FORBIDDEN", message: error instanceof Error ? error.message : "Assistance could not be started." }); }
     }),
     resolve: roleProcedure(["volunteer"]).input(z.object({ publicId: z.string().min(3).max(40) })).mutation(async ({ ctx, input }) => {
-      try { requireVerifiedVolunteer(ctx.user); const incident = await db.resolveIncidentByVolunteer(input.publicId, ctx.user.id); if (!incident) throw new TRPCError({ code: "NOT_FOUND", message: "Incident not found." }); await db.setVolunteerAvailability(ctx.user.id, { availability: "offline" }); return incident; }
+      try { requireVerifiedVolunteer(ctx.user); const incident = await db.resolveIncidentByVolunteer(input.publicId, ctx.user.id); if (!incident) throw new TRPCError({ code: "NOT_FOUND", message: "Incident not found." }); await db.setVolunteerAvailability(ctx.user.id, { availability: "offline" }); dispatchLifecycle(incident); return incident; }
       catch (error) { if (error instanceof TRPCError) throw error; throw new TRPCError({ code: "FORBIDDEN", message: error instanceof Error ? error.message : "Incident could not be resolved." }); }
     }),
     updateLocation: roleProcedure(["volunteer"]).input(z.object({ publicId: z.string().min(3).max(40), latitude: z.number().min(-90).max(90), longitude: z.number().min(-180).max(180) })).mutation(async ({ ctx, input }) => {
@@ -180,12 +191,12 @@ export const appRouter = router({
     }),
     escalate: roleProcedure(["coordinator", "admin"]).input(z.object({ publicId: z.string().min(3).max(40), escalation: z.enum(ghrEscalationStates).exclude(["not_escalated"]), note: z.string().trim().max(500).nullable() })).mutation(async ({ ctx, input }) => {
       await requireGoldenHourIncidentAccess(ctx.user, input.publicId);
-      try { const incident = await db.updateGoldenHourEscalation(input.publicId, ctx.user.id, input); if (!incident) throw new TRPCError({ code: "NOT_FOUND", message: "Incident not found." }); return incident; }
+      try { const incident = await db.updateGoldenHourEscalation(input.publicId, ctx.user.id, input); if (!incident) throw new TRPCError({ code: "NOT_FOUND", message: "Incident not found." }); dispatchNotification(notifyIncidentEscalated(incident)); return incident; }
       catch (error) { if (error instanceof TRPCError) throw error; throw new TRPCError({ code: "CONFLICT", message: error instanceof Error ? error.message : "Escalation could not be recorded." }); }
     }),
     resolve: roleProcedure(["coordinator", "admin"]).input(z.object({ publicId: z.string().min(3).max(40) })).mutation(async ({ ctx, input }) => {
       await requireGoldenHourIncidentAccess(ctx.user, input.publicId);
-      try { const incident = await db.resolveGoldenHourIncident(input.publicId, ctx.user.id); if (!incident) throw new TRPCError({ code: "NOT_FOUND", message: "Incident not found." }); return incident; }
+      try { const incident = await db.resolveGoldenHourIncident(input.publicId, ctx.user.id); if (!incident) throw new TRPCError({ code: "NOT_FOUND", message: "Incident not found." }); dispatchLifecycle(incident); return incident; }
       catch (error) { if (error instanceof TRPCError) throw error; throw new TRPCError({ code: "CONFLICT", message: error instanceof Error ? error.message : "Golden Hour Response could not be resolved." }); }
     }),
   }),
@@ -229,6 +240,20 @@ export const appRouter = router({
       return processAiAnalysisQueue(10);
     }),
   }),
+  notifications: router({
+    inbox: protectedProcedure.query(async ({ ctx }) => ({ items: await db.listNotificationsForUser(ctx.user.id), unreadCount: await db.countUnreadNotifications(ctx.user.id) })),
+    markRead: protectedProcedure.input(z.object({ notificationId: z.number().int().positive() })).mutation(async ({ ctx, input }) => {
+      const notification = await db.markNotificationRead(input.notificationId, ctx.user.id);
+      if (!notification) throw new TRPCError({ code: "NOT_FOUND", message: "Notification not found." });
+      return notification;
+    }),
+    preferences: protectedProcedure.query(({ ctx }) => db.getNotificationPreferences(ctx.user.id)),
+    updatePreferences: protectedProcedure.input(z.object({ inAppEnabled: z.boolean(), smsEnabled: z.boolean() })).mutation(({ ctx, input }) => db.updateNotificationPreferences(ctx.user.id, input)),
+    processDevelopmentEscalations: roleProcedure(["coordinator", "admin"]).mutation(async () => {
+      if (process.env.NODE_ENV === "production") throw new TRPCError({ code: "FORBIDDEN", message: "Notification escalations are processed by the protected scheduled worker in production." });
+      return processNotificationEscalations();
+    }),
+  }),
   coordinator: router({
     activeIncidents: roleProcedure(["coordinator", "admin"]).query(({ ctx }) => db.listIncidentsVisibleTo(ctx.user)),
     commandCenter: roleProcedure(["coordinator", "admin"]).query(() => db.getCoordinatorCommandCenter()),
@@ -236,6 +261,7 @@ export const appRouter = router({
   admin: router({
     users: adminProcedure.query(() => db.listUsersForAdmin()),
     aiAudits: adminProcedure.query(() => db.listAiAudits()),
+    notificationAudits: adminProcedure.query(() => db.listNotificationAudits()),
     updateRole: adminProcedure.input(z.object({ userId: z.number().int().positive(), role: z.enum(appRoles) })).mutation(async ({ ctx, input }) => {
       if (!canChangeRole(ctx.user, input.userId)) throw new TRPCError({ code: "FORBIDDEN", message: "Administrators cannot change their own role in an active session." });
       const updated = await db.updateUserRole(input.userId, input.role as AppRole);

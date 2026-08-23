@@ -69,3 +69,18 @@
 - [x] Save a verified RANEEV AI intelligence-layer checkpoint.
 - [x] Implement the confirmed durable queued AI processing path with persistent status, retry-safe handling, and no dependency from core emergency actions.
 - [x] Save the final post-AI intelligence-layer checkpoint after verification.
+- [x] Review the newly attached RANEEV specification and identify its compatible product, security, workflow, and interface requirements.
+- [x] Implement and verify the attachment-driven requirements using the existing shared-record emergency architecture.
+- [x] Save a verified checkpoint for the attachment-driven RANEEV enhancement.
+- [x] Review lifecycle transition points and the existing shared role shell for non-blocking notification emission and inbox placement.
+- [x] Add idempotent recipient-scoped notification records, in-app/SMS preferences, provider metadata, and notification audit fields linked only to existing users and incidents.
+- [x] Implement a default demo provider that persists and labels simulated in-app delivery, plus an optional server-side Twilio SMS adapter that fails safely when not configured.
+- [x] Emit in-app notifications for incident confirmation, nearby volunteer availability, assignment, en-route, arrival, escalation, coordinator alerts, and resolution without changing core workflow outcomes.
+- [x] Add configurable responder-search and escalation thresholds with durable idempotent processing for coordinator alerts.
+- [x] Connect a minimal reusable inbox to the existing shell Bell control, including unread/read state, timestamp, priority, incident navigation, and user preference controls.
+- [x] Verify three-role notification delivery, real-time inbox refresh, idempotency, authorization, optional-provider failure fallback, escalation, and desktop/mobile inbox behaviour.
+- [x] Save the final verified RANEEV notification and communication checkpoint.
+- [x] Implement the configured escalation-timeout coordinator alert processor and preserve idempotency across repeated scheduled runs.
+- [x] Verify responder-search and escalation-timeout processing together, including repeat-run deduplication.
+- [x] Save the post-escalation-timeout verified notification and communication checkpoint.
+- [x] Save the final verified post-notification checkpoint after all escalation-timeout validation.

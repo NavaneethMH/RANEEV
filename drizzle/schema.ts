@@ -1,5 +1,6 @@
 /* RANEEV data model — credential records and incident access constraints only; the existing UI is intentionally unaffected. */
 import {
+  boolean,
   index,
   int,
   mysqlEnum,
@@ -19,6 +20,11 @@ export const incidentEventTypes = ["created", "search_started", "responder_accep
 export const aiJobStatuses = ["pending", "processing", "completed", "failed"] as const;
 export const aiAuditStatuses = ["succeeded", "failed", "fallback"] as const;
 export const aiOperations = ["incident_enrichment", "coordinator_assistant"] as const;
+export const notificationTypes = ["emergency_confirmation", "nearby_emergency", "responder_assigned", "responder_en_route", "responder_arrived", "incident_resolved", "coordinator_critical", "coordinator_no_responder", "coordinator_escalated", "assignment_cancelled", "reassignment_required"] as const;
+export const notificationPriorities = ["critical", "high", "normal", "low"] as const;
+export const notificationChannels = ["in_app", "sms"] as const;
+export const notificationStatuses = ["pending", "delivered_demo", "sent", "failed"] as const;
+export const notificationProviders = ["demo", "twilio", "fallback"] as const;
 
 /**
  * `openId` remains the stable internal subject key for template compatibility.
@@ -126,6 +132,36 @@ export const aiIncidentAudits = mysqlTable("aiIncidentAudits", {
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 }, table => [index("ai_audits_incident_created_idx").on(table.incidentId, table.createdAt), index("ai_audits_operation_created_idx").on(table.operation, table.createdAt)]);
 
+/** Recipient-scoped, idempotent notification deliveries. No private incident details are required for SMS transport. */
+export const notifications = mysqlTable("notifications", {
+  id: int("id").autoincrement().primaryKey(),
+  dedupeKey: varchar("dedupeKey", { length: 180 }).notNull().unique(),
+  recipientUserId: int("recipientUserId").notNull().references(() => users.id),
+  incidentId: int("incidentId").references(() => incidents.id),
+  type: mysqlEnum("type", notificationTypes).notNull(),
+  priority: mysqlEnum("priority", notificationPriorities).notNull().default("normal"),
+  channel: mysqlEnum("channel", notificationChannels).notNull().default("in_app"),
+  status: mysqlEnum("status", notificationStatuses).notNull().default("pending"),
+  provider: mysqlEnum("provider", notificationProviders).notNull().default("demo"),
+  title: varchar("title", { length: 180 }).notNull(),
+  message: varchar("message", { length: 500 }).notNull(),
+  providerMessageId: varchar("providerMessageId", { length: 120 }),
+  errorMessage: varchar("errorMessage", { length: 500 }),
+  sentAt: timestamp("sentAt"),
+  readAt: timestamp("readAt"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, table => [index("notifications_recipient_unread_idx").on(table.recipientUserId, table.readAt, table.createdAt), index("notifications_incident_created_idx").on(table.incidentId, table.createdAt), index("notifications_status_created_idx").on(table.status, table.createdAt)]);
+
+/** Critical in-app alerts cannot be disabled; these preferences apply only to optional channels and normal updates. */
+export const notificationPreferences = mysqlTable("notificationPreferences", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull().references(() => users.id).unique(),
+  inAppEnabled: boolean("inAppEnabled").notNull().default(true),
+  smsEnabled: boolean("smsEnabled").notNull().default(false),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
 export type AppRole = (typeof appRoles)[number];
 export type ProfileStatus = (typeof profileStatuses)[number];
 export type VolunteerAvailability = (typeof volunteerAvailabilityStates)[number];
@@ -136,9 +172,16 @@ export type IncidentEventType = (typeof incidentEventTypes)[number];
 export type AiJobStatus = (typeof aiJobStatuses)[number];
 export type AiAuditStatus = (typeof aiAuditStatuses)[number];
 export type AiOperation = (typeof aiOperations)[number];
+export type NotificationType = (typeof notificationTypes)[number];
+export type NotificationPriority = (typeof notificationPriorities)[number];
+export type NotificationChannel = (typeof notificationChannels)[number];
+export type NotificationStatus = (typeof notificationStatuses)[number];
+export type NotificationProvider = (typeof notificationProviders)[number];
 export type User = typeof users.$inferSelect;
 export type InsertUser = typeof users.$inferInsert;
 export type Incident = typeof incidents.$inferSelect;
 export type IncidentEvent = typeof incidentEvents.$inferSelect;
 export type AiAnalysisJob = typeof aiAnalysisJobs.$inferSelect;
 export type AiIncidentAudit = typeof aiIncidentAudits.$inferSelect;
+export type Notification = typeof notifications.$inferSelect;
+export type NotificationPreference = typeof notificationPreferences.$inferSelect;

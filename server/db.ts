@@ -1,8 +1,8 @@
 /* RANEEV database access — all credential and incident queries return the minimum fields needed for server authorization. */
-import { and, asc, desc, eq, isNull, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNotNull, isNull, lt, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
-import type { AiAnalysisJob, AppRole, EmergencyType, GhrEscalation, GhrSeverity, Incident, IncidentEvent, InsertUser, User, VolunteerAvailability } from "../drizzle/schema";
-import { aiAnalysisJobs, aiIncidentAudits, incidentEvents, incidents, users } from "../drizzle/schema";
+import type { AiAnalysisJob, AppRole, EmergencyType, GhrEscalation, GhrSeverity, Incident, IncidentEvent, InsertUser, NotificationChannel, NotificationPriority, NotificationProvider, NotificationStatus, NotificationType, User, VolunteerAvailability } from "../drizzle/schema";
+import { aiAnalysisJobs, aiIncidentAudits, incidentEvents, incidents, notificationPreferences, notifications, users } from "../drizzle/schema";
 import type { ResponderType } from "./ai/contracts";
 import { parseResponderSkills, scoreResponders } from "./ai/matching";
 import { averageAcceptanceMinutes, coordinatorPriority } from "./coordinator/metrics";
@@ -70,6 +70,89 @@ export async function updateUserRole(userId: number, role: AppRole) {
   const database = await requireDb();
   await database.update(users).set({ role, sessionVersion: sql`${users.sessionVersion} + 1` }).where(eq(users.id, userId));
   return getUserById(userId);
+}
+
+export async function getNotificationPreferences(userId: number) {
+  const database = await requireDb();
+  const result = await database.select().from(notificationPreferences).where(eq(notificationPreferences.userId, userId)).limit(1);
+  return result[0] ?? { userId, inAppEnabled: true, smsEnabled: false };
+}
+
+export async function updateNotificationPreferences(userId: number, input: { inAppEnabled: boolean; smsEnabled: boolean }) {
+  const database = await requireDb();
+  await database.insert(notificationPreferences).values({ userId, ...input }).onDuplicateKeyUpdate({ set: input });
+  return getNotificationPreferences(userId);
+}
+
+export async function createNotificationIfAbsent(input: { dedupeKey: string; recipientUserId: number; incidentId: number | null; type: NotificationType; priority: NotificationPriority; channel: NotificationChannel; status: NotificationStatus; provider: NotificationProvider; title: string; message: string; providerMessageId?: string | null; errorMessage?: string | null; sentAt?: Date | null }) {
+  const database = await requireDb();
+  const existing = await database.select().from(notifications).where(eq(notifications.dedupeKey, input.dedupeKey)).limit(1);
+  if (existing[0]) return { notification: existing[0], created: false };
+  try {
+    await database.insert(notifications).values(input);
+  } catch (error) {
+    const duplicate = await database.select().from(notifications).where(eq(notifications.dedupeKey, input.dedupeKey)).limit(1);
+    if (duplicate[0]) return { notification: duplicate[0], created: false };
+    throw error;
+  }
+  const created = await database.select().from(notifications).where(eq(notifications.dedupeKey, input.dedupeKey)).limit(1);
+  if (!created[0]) throw new Error("Notification delivery record did not return after creation.");
+  return { notification: created[0], created: true };
+}
+
+export async function updateNotificationDelivery(id: number, input: { status: NotificationStatus; provider: NotificationProvider; providerMessageId?: string | null; errorMessage?: string | null; sentAt?: Date | null }) {
+  const database = await requireDb();
+  await database.update(notifications).set(input).where(eq(notifications.id, id));
+  const result = await database.select().from(notifications).where(eq(notifications.id, id)).limit(1);
+  return result[0] ?? null;
+}
+
+export async function listNotificationsForUser(userId: number, limit = 40) {
+  const database = await requireDb();
+  return database.select({ notification: notifications, publicId: incidents.publicId, incidentStatus: incidents.status }).from(notifications).leftJoin(incidents, eq(notifications.incidentId, incidents.id)).where(eq(notifications.recipientUserId, userId)).orderBy(desc(notifications.createdAt), desc(notifications.id)).limit(limit);
+}
+
+export async function listNotificationAudits(limit = 80) {
+  const database = await requireDb();
+  return database.select({
+    id: notifications.id, type: notifications.type, priority: notifications.priority, channel: notifications.channel, status: notifications.status, provider: notifications.provider,
+    errorMessage: notifications.errorMessage, sentAt: notifications.sentAt, readAt: notifications.readAt, createdAt: notifications.createdAt,
+    recipientRole: users.role, publicId: incidents.publicId,
+  }).from(notifications).innerJoin(users, eq(notifications.recipientUserId, users.id)).leftJoin(incidents, eq(notifications.incidentId, incidents.id)).orderBy(desc(notifications.createdAt), desc(notifications.id)).limit(limit);
+}
+
+export async function countUnreadNotifications(userId: number) {
+  const database = await requireDb();
+  const result = await database.select({ count: sql<number>`count(*)` }).from(notifications).where(and(eq(notifications.recipientUserId, userId), isNull(notifications.readAt)));
+  return Number(result[0]?.count ?? 0);
+}
+
+export async function markNotificationRead(notificationId: number, userId: number) {
+  const database = await requireDb();
+  await database.update(notifications).set({ readAt: new Date() }).where(and(eq(notifications.id, notificationId), eq(notifications.recipientUserId, userId)));
+  const result = await database.select().from(notifications).where(and(eq(notifications.id, notificationId), eq(notifications.recipientUserId, userId))).limit(1);
+  return result[0] ?? null;
+}
+
+export async function listCoordinatorRecipients() {
+  const database = await requireDb();
+  return database.select().from(users).where(inArray(users.role, ["coordinator", "admin"]));
+}
+
+export async function listAvailableVolunteersNearIncident(incident: Incident) {
+  const database = await requireDb();
+  const candidates = await database.select().from(users).where(and(eq(users.role, "volunteer"), eq(users.profileStatus, "active"), eq(users.volunteerAvailability, "available")));
+  return candidates.filter(candidate => candidate.verifiedAt && candidate.volunteerLatitudeE6 !== null && candidate.volunteerLongitudeE6 !== null && distanceMeters(candidate.volunteerLatitudeE6, candidate.volunteerLongitudeE6, incident.latitudeE6, incident.longitudeE6) <= 10_000);
+}
+
+export async function listSearchingIncidentsCreatedBefore(cutoff: Date) {
+  const database = await requireDb();
+  return database.select().from(incidents).where(and(eq(incidents.status, "searching"), isNull(incidents.assignedVolunteerId), lt(incidents.createdAt, cutoff))).orderBy(asc(incidents.createdAt)).limit(100);
+}
+
+export async function listEscalatedIncidentsBefore(cutoff: Date) {
+  const database = await requireDb();
+  return database.select().from(incidents).where(and(isNotNull(incidents.ghrEscalatedAt), lt(incidents.ghrEscalatedAt, cutoff), inArray(incidents.status, ["searching", "accepted", "en_route", "arrived", "assisting"]))).orderBy(asc(incidents.ghrEscalatedAt)).limit(100);
 }
 
 export async function getVolunteerReadiness(userId: number) {
@@ -224,7 +307,17 @@ export async function setVolunteerSkills(userId: number, skills: string[]) {
 
 async function addIncidentEvent(input: { incidentId: number; actorUserId: number | null; eventType: IncidentEvent["eventType"]; note: string }) {
   const database = await requireDb();
-  await database.insert(incidentEvents).values(input);
+  try {
+    await database.insert(incidentEvents).values(input);
+  } catch (firstError) {
+    await new Promise(resolve => setTimeout(resolve, 40));
+    try {
+      await database.insert(incidentEvents).values(input);
+    } catch (secondError) {
+      console.warn("[Incident events] Audit insert retry failed:", firstError instanceof Error ? firstError.message : firstError);
+      throw secondError;
+    }
+  }
 }
 
 function ensureGoldenHourActive(incident: Incident) {
