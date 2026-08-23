@@ -505,6 +505,71 @@ export async function acceptIncident(publicId: string, volunteerUserId: number) 
   return transitionIncident({ incident: refreshed, to: "accepted", actorUserId: volunteerUserId, note: "A verified responder accepted your request.", responderEtaMinutes: 8 });
 }
 
+export type CoordinatorAssignmentResult = { incident: Incident; previousVolunteerId: number | null; action: "assigned" | "reassigned" };
+
+export async function listCoordinatorAssignmentCandidates(publicId: string) {
+  const incident = await getIncidentByPublicId(publicId);
+  if (!incident) return null;
+  if (incident.isDemo || !["searching", "accepted", "en_route"].includes(incident.status)) return { incident, candidates: [] as User[] };
+  return { incident, candidates: await listAvailableVolunteersNearIncident(incident) };
+}
+
+export async function coordinatorAssignIncident(publicId: string, coordinatorUserId: number, volunteerUserId: number): Promise<CoordinatorAssignmentResult | null> {
+  const database = await requireDb();
+  return database.transaction(async tx => {
+    const incident = (await tx.select().from(incidents).where(eq(incidents.publicId, publicId)).limit(1))[0];
+    if (!incident) return null;
+    if (incident.isDemo) throw new Error("Demo Mode assignments are controlled by the simulation.");
+    const previousVolunteerId = incident.assignedVolunteerId;
+    const action = previousVolunteerId ? "reassigned" as const : "assigned" as const;
+    if (action === "assigned" && incident.status !== "searching") throw new Error("Only a searching incident can receive a coordinator assignment.");
+    if (action === "reassigned" && !["accepted", "en_route"].includes(incident.status)) throw new Error("A responder can only be reassigned before arrival.");
+    if (previousVolunteerId === volunteerUserId) throw new Error("Select a different available responder to reassign this incident.");
+
+    const volunteer = (await tx.select().from(users).where(eq(users.id, volunteerUserId)).limit(1))[0];
+    if (!volunteer || volunteer.role !== "volunteer" || volunteer.profileStatus !== "active" || volunteer.volunteerAvailability !== "available" || !volunteer.verifiedAt || volunteer.volunteerLatitudeE6 === null || volunteer.volunteerLongitudeE6 === null) {
+      throw new Error("The selected responder is not currently verified and available.");
+    }
+    if (distanceMeters(volunteer.volunteerLatitudeE6, volunteer.volunteerLongitudeE6, incident.latitudeE6, incident.longitudeE6) > 10_000) throw new Error("The selected responder is outside the configured response area.");
+
+    const now = new Date();
+    await tx.update(incidents).set({
+      assignedVolunteerId: volunteer.id,
+      status: "accepted",
+      acceptedAt: now,
+      responderEtaMinutes: 8,
+      responderLatitudeE6: volunteer.volunteerLatitudeE6,
+      responderLongitudeE6: volunteer.volunteerLongitudeE6,
+      responderLocationUpdatedAt: now,
+    }).where(and(eq(incidents.id, incident.id), eq(incidents.status, incident.status), previousVolunteerId === null ? isNull(incidents.assignedVolunteerId) : eq(incidents.assignedVolunteerId, previousVolunteerId)));
+    const refreshed = (await tx.select().from(incidents).where(eq(incidents.id, incident.id)).limit(1))[0];
+    if (!refreshed || refreshed.assignedVolunteerId !== volunteer.id || refreshed.status !== "accepted") throw new Error("The incident changed before the coordinator assignment could be saved.");
+
+    await tx.update(users).set({ volunteerAvailability: "busy" }).where(eq(users.id, volunteer.id));
+    if (previousVolunteerId) await tx.update(users).set({ volunteerAvailability: "available" }).where(and(eq(users.id, previousVolunteerId), eq(users.volunteerAvailability, "busy")));
+    await tx.insert(incidentEvents).values({ incidentId: refreshed.id, actorUserId: coordinatorUserId, eventType: action === "assigned" ? "coordinator_assigned" : "responder_reassigned", note: action === "assigned" ? "Coordinator assigned a verified responder to this emergency." : "Coordinator reassigned this emergency to a different verified responder before arrival." });
+    return { incident: refreshed, previousVolunteerId, action };
+  });
+}
+
+export async function coordinatorCancelIncident(publicId: string, coordinatorUserId: number, reason: string) {
+  const database = await requireDb();
+  return database.transaction(async tx => {
+    const incident = (await tx.select().from(incidents).where(eq(incidents.publicId, publicId)).limit(1))[0];
+    if (!incident) return null;
+    if (incident.isDemo) throw new Error("Demo Mode incidents are controlled by the simulation.");
+    if (!["searching", "accepted", "en_route"].includes(incident.status)) throw new Error("Only an unarrived incident can be cancelled by coordination.");
+    const previousVolunteerId = incident.assignedVolunteerId;
+    const now = new Date();
+    await tx.update(incidents).set({ status: "cancelled", cancelledAt: now, cancellationReason: reason }).where(and(eq(incidents.id, incident.id), eq(incidents.status, incident.status)));
+    const refreshed = (await tx.select().from(incidents).where(eq(incidents.id, incident.id)).limit(1))[0];
+    if (!refreshed || refreshed.status !== "cancelled") throw new Error("The incident changed before cancellation could be saved.");
+    if (previousVolunteerId) await tx.update(users).set({ volunteerAvailability: "available" }).where(and(eq(users.id, previousVolunteerId), eq(users.volunteerAvailability, "busy")));
+    await tx.insert(incidentEvents).values({ incidentId: refreshed.id, actorUserId: coordinatorUserId, eventType: "cancelled", note: `Coordinator cancelled this emergency response: ${reason}` });
+    return { incident: refreshed, previousVolunteerId };
+  });
+}
+
 export async function updateResponderPosition(publicId: string, volunteerUserId: number, latitudeE6: number, longitudeE6: number) {
   const incident = await getIncidentByPublicId(publicId);
   if (!incident) return null;

@@ -7,7 +7,7 @@ import { OperationalAlert, PageHeading, StatePreview, StatusBadge, SurfaceCard }
 import { trpc } from "@/lib/trpc";
 import type { EmergencyMapMarker } from "@/lib/maps/contracts";
 
-const emergencyLabels: Record<string, string> = { medical: "Medical emergency", road_accident: "Road accident", injury: "Injury", fire: "Fire concern", unconscious: "Unconscious person", other: "Emergency request" };
+const emergencyLabels: Record<string, string> = { medical: "Medical emergency", road_accident: "Road accident", injury: "Injury", fire: "Fire concern", unconscious: "Unconscious person", missing_person: "Missing person", violence: "Violence or safety threat", natural_disaster: "Natural disaster", other: "Emergency request" };
 const severityLabels: Record<string, string> = { unassessed: "Unassessed", standard: "Standard", urgent: "Urgent", critical: "Critical" };
 
 function incidentTone(status: string, severity: string) {

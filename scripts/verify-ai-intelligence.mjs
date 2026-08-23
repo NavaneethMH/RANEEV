@@ -64,7 +64,7 @@ try {
   await coordinator.page.goto(`${baseURL}/coordinator`, { waitUntil: "domcontentloaded" });
   await coordinator.page.getByPlaceholder("Ask about current authorized incidents or responder readiness…").waitFor({ timeout: 30_000 });
   await coordinator.page.getByRole("button", { name: "Which active incident needs attention first?" }).click();
-  await coordinator.page.locator(".prose").first().waitFor({ timeout: 60_000 });
+  await coordinator.page.waitForFunction(() => document.querySelectorAll("p.whitespace-pre-wrap").length >= 2, { timeout: 60_000 });
   await coordinator.page.screenshot({ path: "/home/ubuntu/raneev-ai-command-center.png", fullPage: true });
   await coordinator.context.close();
 

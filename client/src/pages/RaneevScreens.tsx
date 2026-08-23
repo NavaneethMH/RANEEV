@@ -49,10 +49,13 @@ const emergencyOptions: Array<{ key: CitizenEmergencyType; title: string; detail
   { key: "injury", title: "Injury", detail: "Fall, wound, or assistance needed" },
   { key: "fire", title: "Fire concern", detail: "Small fire or immediate safety support" },
   { key: "unconscious", title: "Unconscious person", detail: "Person not responding" },
+  { key: "missing_person", title: "Missing person", detail: "Someone is missing or cannot be located" },
+  { key: "violence", title: "Violence or safety threat", detail: "Immediate safety support is needed" },
+  { key: "natural_disaster", title: "Natural disaster", detail: "Weather, flood, or disaster-related emergency" },
   { key: "other", title: "Other", detail: "Describe the immediate situation" },
 ];
 
-const emergencyLabel: Record<CitizenEmergencyType, string> = { medical: "Medical emergency", road_accident: "Road accident", injury: "Injury", fire: "Fire concern", unconscious: "Unconscious person", other: "Other" };
+const emergencyLabel: Record<CitizenEmergencyType, string> = { medical: "Medical emergency", road_accident: "Road accident", injury: "Injury", fire: "Fire concern", unconscious: "Unconscious person", missing_person: "Missing person", violence: "Violence or safety threat", natural_disaster: "Natural disaster", other: "Other" };
 
 function incidentTone(status: string) { return status === "resolved" ? "safe" as const : status === "arrived" ? "safe" as const : status === "searching" ? "warning" as const : "critical" as const; }
 function incidentStatusLabel(status: string) { return status === "searching" ? "Searching responders" : status === "accepted" ? "Responder accepted" : status === "en_route" ? "Responder en route" : status === "arrived" ? "Help arrived" : status === "resolved" ? "Incident resolved" : "Emergency request"; }

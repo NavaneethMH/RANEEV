@@ -1,6 +1,6 @@
 import { createContext, useContext, useMemo, useState, type ReactNode } from "react";
 
-export type CitizenEmergencyType = "medical" | "road_accident" | "injury" | "fire" | "unconscious" | "other";
+export type CitizenEmergencyType = "medical" | "road_accident" | "injury" | "fire" | "unconscious" | "missing_person" | "violence" | "natural_disaster" | "other";
 
 export type EmergencyDraft = {
   emergencyType: CitizenEmergencyType;

@@ -97,6 +97,48 @@ export async function notifyIncidentLifecycle(incident: Incident, event: Exclude
   await notifyMany(recipientGroups, incident, notices[event]);
 }
 
+export async function notifyCoordinatorAssignment(result: db.CoordinatorAssignmentResult) {
+  const { incident, previousVolunteerId, action } = result;
+  const [citizen, assignedVolunteer, coordinators, previousVolunteer] = await Promise.all([
+    db.getUserById(incident.createdByUserId),
+    incident.assignedVolunteerId ? db.getUserById(incident.assignedVolunteerId) : null,
+    db.listCoordinatorRecipients(),
+    previousVolunteerId ? db.getUserById(previousVolunteerId) : null,
+  ]);
+  const assignmentKey = `${incident.id}:${action}:${incident.acceptedAt?.getTime() ?? Date.now()}`;
+  await notifyMany([citizen, assignedVolunteer, ...coordinators].filter((user): user is User => Boolean(user)), incident, {
+    key: assignmentKey,
+    type: "responder_assigned",
+    priority: "high",
+    title: action === "assigned" ? "Responder assigned by coordination" : "Responder reassigned by coordination",
+    message: action === "assigned" ? "A coordinator assigned a verified responder to this emergency." : "A coordinator reassigned this emergency to a verified responder before arrival.",
+  });
+  if (previousVolunteer) {
+    await notifyMany([previousVolunteer], incident, {
+      key: `${assignmentKey}:previous`,
+      type: "reassignment_required",
+      priority: "high",
+      title: "Response reassigned",
+      message: "Coordination reassigned this emergency before arrival. You are no longer assigned and may become available for another request.",
+    });
+  }
+}
+
+export async function notifyIncidentCancelled(incident: Incident, previousVolunteerId: number | null) {
+  const [citizen, previousVolunteer, coordinators] = await Promise.all([
+    db.getUserById(incident.createdByUserId),
+    previousVolunteerId ? db.getUserById(previousVolunteerId) : null,
+    db.listCoordinatorRecipients(),
+  ]);
+  await notifyMany([citizen, previousVolunteer, ...coordinators].filter((user): user is User => Boolean(user)), incident, {
+    key: `${incident.id}:cancelled`,
+    type: "assignment_cancelled",
+    priority: "high",
+    title: "Emergency response cancelled",
+    message: "Coordination cancelled this emergency response before responder arrival. The shared timeline records the reason.",
+  });
+}
+
 export async function notifyIncidentEscalated(incident: Incident) {
   const citizen = await db.getUserById(incident.createdByUserId);
   const volunteer = incident.assignedVolunteerId ? await db.getUserById(incident.assignedVolunteerId) : null;

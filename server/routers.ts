@@ -11,7 +11,7 @@ import { systemRouter } from "./_core/systemRouter";
 import { adminProcedure, protectedProcedure, publicProcedure, roleProcedure, router } from "./_core/trpc";
 import { answerCoordinatorQuestion, processAiAnalysisQueue } from "./ai/service";
 import { validateEnrichment } from "./ai/validation";
-import { notifyIncidentCreated, notifyIncidentEscalated, notifyIncidentLifecycle, processNotificationEscalations } from "./notifications/service";
+import { notifyCoordinatorAssignment, notifyIncidentCancelled, notifyIncidentCreated, notifyIncidentEscalated, notifyIncidentLifecycle, processNotificationEscalations } from "./notifications/service";
 import { getDemoModeStatus, isDemoActor, isDemoPresenter, pauseDemoMode, resetDemoMode, resumeDemoMode, skipDemoModeStage, startDemoMode } from "./demo/service";
 
 function publicUser(user: User) {
@@ -312,6 +312,27 @@ export const appRouter = router({
   coordinator: router({
     activeIncidents: roleProcedure(["coordinator", "admin"]).query(async ({ ctx }) => db.listIncidentsVisibleTo(ctx.user, await isViewingActiveDemo(ctx.user))),
     commandCenter: roleProcedure(["coordinator", "admin"]).query(async ({ ctx }) => db.getCoordinatorCommandCenter(await isViewingActiveDemo(ctx.user))),
+    assignmentCandidates: roleProcedure(["coordinator", "admin"]).input(z.object({ publicId: z.string().min(3).max(40) })).query(async ({ input }) => {
+      const result = await db.listCoordinatorAssignmentCandidates(input.publicId);
+      if (!result) throw new TRPCError({ code: "NOT_FOUND", message: "Incident not found." });
+      return result.candidates.map(candidate => ({ id: candidate.id, name: candidate.name, skills: candidate.volunteerSkills, latitudeE6: candidate.volunteerLatitudeE6, longitudeE6: candidate.volunteerLongitudeE6 }));
+    }),
+    assignResponder: roleProcedure(["coordinator", "admin"]).input(z.object({ publicId: z.string().min(3).max(40), volunteerUserId: z.number().int().positive() })).mutation(async ({ ctx, input }) => {
+      try {
+        const result = await db.coordinatorAssignIncident(input.publicId, ctx.user.id, input.volunteerUserId);
+        if (!result) throw new TRPCError({ code: "NOT_FOUND", message: "Incident not found." });
+        dispatchNotification(notifyCoordinatorAssignment(result));
+        return result.incident;
+      } catch (error) { if (error instanceof TRPCError) throw error; throw new TRPCError({ code: "CONFLICT", message: error instanceof Error ? error.message : "Responder assignment could not be saved." }); }
+    }),
+    cancelIncident: roleProcedure(["coordinator", "admin"]).input(z.object({ publicId: z.string().min(3).max(40), reason: z.string().trim().min(3).max(500) })).mutation(async ({ ctx, input }) => {
+      try {
+        const result = await db.coordinatorCancelIncident(input.publicId, ctx.user.id, input.reason);
+        if (!result) throw new TRPCError({ code: "NOT_FOUND", message: "Incident not found." });
+        dispatchNotification(notifyIncidentCancelled(result.incident, result.previousVolunteerId));
+        return result.incident;
+      } catch (error) { if (error instanceof TRPCError) throw error; throw new TRPCError({ code: "CONFLICT", message: error instanceof Error ? error.message : "Incident cancellation could not be saved." }); }
+    }),
   }),
   admin: router({
     users: adminProcedure.query(() => db.listUsersForAdmin()),

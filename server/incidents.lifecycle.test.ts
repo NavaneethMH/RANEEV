@@ -1,5 +1,6 @@
 /* RANEEV lifecycle tests — accepted citizen requests can only advance through the verified golden-path sequence. */
 import { describe, expect, it } from "vitest";
+import { emergencyTypes, incidentEventTypes } from "../drizzle/schema";
 import { canTransition, lifecycleEventFor } from "./incidents/lifecycle";
 
 describe("Citizen Emergency Request lifecycle", () => {
@@ -20,5 +21,10 @@ describe("Citizen Emergency Request lifecycle", () => {
     expect(lifecycleEventFor("arrived")).toBe("arrived");
     expect(lifecycleEventFor("assisting")).toBe("assistance_started");
     expect(lifecycleEventFor("resolved")).toBe("resolved");
+  });
+
+  it("retains the explicit Master MVP emergency categories and coordinator audit vocabulary", () => {
+    expect(emergencyTypes).toEqual(expect.arrayContaining(["missing_person", "violence", "natural_disaster"]));
+    expect(incidentEventTypes).toEqual(expect.arrayContaining(["coordinator_assigned", "responder_reassigned", "cancelled"]));
   });
 });

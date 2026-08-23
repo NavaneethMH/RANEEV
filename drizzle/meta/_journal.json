@@ -64,6 +64,13 @@
       "when": 1787504400000,
       "tag": "0008_demo_mode",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "5",
+      "when": 1787508563421,
+      "tag": "0009_blue_cannonball",
+      "breakpoints": true
     }
   ]
 }

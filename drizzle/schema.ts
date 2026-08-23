@@ -13,10 +13,10 @@ export const appRoles = ["citizen", "volunteer", "coordinator", "admin"] as cons
 export const profileStatuses = ["active", "pending_verification", "suspended"] as const;
 export const volunteerAvailabilityStates = ["offline", "available", "busy"] as const;
 export const incidentStatuses = ["active", "searching", "accepted", "en_route", "arrived", "assisting", "resolved", "cancelled"] as const;
-export const emergencyTypes = ["medical", "road_accident", "injury", "fire", "unconscious", "other"] as const;
+export const emergencyTypes = ["medical", "road_accident", "injury", "fire", "unconscious", "missing_person", "violence", "natural_disaster", "other"] as const;
 export const ghrSeverityLevels = ["unassessed", "standard", "urgent", "critical"] as const;
 export const ghrEscalationStates = ["not_escalated", "monitoring", "facility_contacted", "professional_services_contacted"] as const;
-export const incidentEventTypes = ["created", "search_started", "responder_accepted", "en_route", "arrived", "assistance_started", "severity_assessed", "facility_selected", "escalated", "resolved"] as const;
+export const incidentEventTypes = ["created", "search_started", "responder_accepted", "coordinator_assigned", "responder_reassigned", "en_route", "arrived", "assistance_started", "severity_assessed", "facility_selected", "escalated", "cancelled", "resolved"] as const;
 export const aiJobStatuses = ["pending", "processing", "completed", "failed"] as const;
 export const aiAuditStatuses = ["succeeded", "failed", "fallback"] as const;
 export const aiOperations = ["incident_enrichment", "coordinator_assistant"] as const;
@@ -85,6 +85,8 @@ export const incidents = mysqlTable("incidents", {
   ghrFacilityDistanceMeters: int("ghrFacilityDistanceMeters"),
   ghrFacilityEtaMinutes: int("ghrFacilityEtaMinutes"),
   ghrFacilitySelectedAt: timestamp("ghrFacilitySelectedAt"),
+  cancelledAt: timestamp("cancelledAt"),
+  cancellationReason: varchar("cancellationReason", { length: 500 }),
   resolvedAt: timestamp("resolvedAt"),
   isDemo: boolean("isDemo").notNull().default(false),
   createdAt: timestamp("createdAt").defaultNow().notNull(),

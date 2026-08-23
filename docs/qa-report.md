@@ -2,13 +2,13 @@
 
 ## System Status
 
-**READY FOR CONTROLLED DEMONSTRATION.** The final regression found no unresolved P0 or P1 defect in the shared Citizen → responder → tracking → GHR → Coordinator → resolution workflow. This classification is based on the executed suites below, not untested assumptions.
+**RANEEV MVP READY FOR DEMONSTRATION.** The final regression found no unresolved P0 or P1 defect in the shared Citizen → responder → tracking → Coordinator → GHR → resolution workflow. This classification is based on the executed suites below, not untested assumptions.
 
 | Measure | Verified result |
 |---|---:|
 | TypeScript | Passed |
-| Automated tests | 12 files / 29 tests passed |
-| Production build | Passed; 2.02 MB main chunk / 543 KB gzip warning remains non-blocking |
+| Automated tests | 13 files / 32 tests passed |
+| Production build | Passed; 1.10 MB main chunk / 264 KB gzip warning remains non-blocking |
 | Responsive cases | 81 at 320–1920px; no horizontal overflow |
 | Accessibility workspaces | 6; zero unlabeled and zero sub-32px interactive controls |
 | Demo Mode cycles | 10 reset-and-run cycles passed |
@@ -21,4 +21,4 @@ The audit fixed three confirmed quality defects without redesign: local HTTP cre
 
 ## Residual Scope and Recommendation
 
-Cancellation/reassignment remains **not applicable** because the shared lifecycle does not implement it. The escalation processor remains intentionally unscheduled until a checkpointed version is published and a protected heartbeat is configured. RANEEV is suitable for a controlled demonstration; production readiness additionally requires that protected schedule and a decision on cancellation/reassignment. Code-splitting the 543 KB gzip main bundle is a non-blocking follow-up.
+The Master MVP completion pass adds coordinator-only assignment, reassignment before arrival, and reasoned cancellation before arrival on the same shared incident record. Each operation persists immutable timeline events, releases responder availability safely, and issues durable recipient-scoped notices. The escalation processor remains intentionally unscheduled until a checkpointed version is published and a protected heartbeat is configured. Code-splitting the 264 KB gzip main bundle remains a non-blocking follow-up.

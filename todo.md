@@ -128,3 +128,9 @@
 - [x] Correct Express 5 wildcard storage-proxy parameter handling and verify that the upgraded server preserves protected asset delivery.
 - [x] Disable the default Express fingerprint header from production responses and verify retained asset-route behavior.
 - [x] Save the verified production-readiness delivery checkpoint.
+- [x] Reconcile the attached Master MVP implementation requirements against the current RANEEV architecture, workflows, database, integrations, and tests.
+- [x] Identify and classify only applicable P0/P1 MVP gaps, preserving intentionally scoped limitations and the approved user interface.
+- [x] Verify or fix the complete Citizen → Volunteer → Coordinator → GHR → Resolution golden path and document honest MVP readiness.
+- [x] Add the three explicitly required persisted emergency categories—missing person, violence, and natural disaster—across schema, validation, and existing Citizen/Coordinator labels.
+- [x] Add an audited, coordinator-only shared lifecycle for responder assignment, reassignment, and searching-stage cancellation with real notification delivery and no disconnected UI state.
+- [x] Save the verified Master MVP completion delivery checkpoint.
