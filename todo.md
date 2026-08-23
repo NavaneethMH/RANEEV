@@ -44,3 +44,11 @@
 - [x] Verify a second Volunteer cannot accept an already assigned Citizen incident.
 - [x] Verify unverified, offline, and non-assigned Volunteer guard denials through protected procedures.
 - [x] Save the post-verification shared-record Volunteer Mode checkpoint.
+- [x] Review the shared incident, lifecycle, route, and map contracts for Golden Hour Response integration.
+- [x] Extend existing incidents with server-controlled severity, escalation, and selected-facility data without creating a parallel incident system.
+- [x] Add protected Golden Hour Response procedures for authorized status, facility selection, route/ETA, escalation, and resolution updates.
+- [x] Build an incident-centred Golden Hour Response workspace with a persistent TIME SINCE INCIDENT indicator.
+- [x] Surface severity, responder availability, nearest appropriate facility, protected route/ETA, escalation state, and resolution progress in the workspace.
+- [x] Verify Golden Hour Response authorization, lifecycle integrity, timing display, route/facility behaviour, and desktop/mobile flows.
+- [x] Save a verified Golden Hour Response checkpoint.
+- [x] Save the final post-Golden-Hour Response checkpoint after verification.

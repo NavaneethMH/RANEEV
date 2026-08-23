@@ -13,7 +13,7 @@ function markerElement(kind: EmergencyMapMarker["kind"]) {
   return marker;
 }
 
-export async function mountGoogleEmergencyMap(map: google.maps.Map, initialData: EmergencyMapData, onRouteMetrics?: (metrics: RouteMetrics | null) => void): Promise<EmergencyMapController> {
+export async function mountGoogleEmergencyMap(map: google.maps.Map, initialData: EmergencyMapData, onRouteMetrics?: (metrics: RouteMetrics | null) => void, onHospitalsFound?: (hospitals: EmergencyMapMarker[]) => void): Promise<EmergencyMapController> {
   const { AdvancedMarkerElement } = await google.maps.importLibrary("marker") as google.maps.MarkerLibrary;
   const directions = new google.maps.DirectionsService();
   const renderer = new google.maps.DirectionsRenderer({ map, suppressMarkers: true, preserveViewport: true, polylineOptions: { strokeColor: "#0e4e78", strokeOpacity: 0.85, strokeWeight: 5 } });
@@ -37,6 +37,7 @@ export async function mountGoogleEmergencyMap(map: google.maps.Map, initialData:
       if (token !== hospitalSearchToken || status !== google.maps.places.PlacesServiceStatus.OK || !results) return;
       const hospitals = results.slice(0, 4).flatMap(place => place.geometry?.location ? [{ id: `hospital-${place.place_id ?? place.name}`, kind: "hospital" as const, title: place.name ?? "Nearby hospital", position: { lat: place.geometry.location.lat(), lng: place.geometry.location.lng() } }] : []);
       addMarkers(hospitals);
+      onHospitalsFound?.(hospitals);
     });
   };
 
@@ -45,8 +46,10 @@ export async function mountGoogleEmergencyMap(map: google.maps.Map, initialData:
     clearMarkers();
     addMarkers([data.incident, ...(data.responder ? [data.responder] : []), ...(data.currentLocation ? [data.currentLocation] : []), ...(data.hospitals ?? [])]);
     queryHospitals(data);
-    if (data.responder) {
-      directions.route({ origin: data.responder.position, destination: data.incident.position, travelMode: google.maps.TravelMode.DRIVING }, (result, status) => {
+    const routeOrigin = data.route?.origin ?? data.responder?.position;
+    const routeDestination = data.route?.destination ?? data.incident.position;
+    if (routeOrigin) {
+      directions.route({ origin: routeOrigin, destination: routeDestination, travelMode: google.maps.TravelMode.DRIVING }, (result, status) => {
         if (status !== google.maps.DirectionsStatus.OK || !result) { onRouteMetrics?.(null); return; }
         renderer.setDirections(result);
         const leg = result.routes[0]?.legs[0];

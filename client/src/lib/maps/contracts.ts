@@ -13,6 +13,7 @@ export type EmergencyMapData = {
   responder?: EmergencyMapMarker;
   currentLocation?: EmergencyMapMarker;
   hospitals?: EmergencyMapMarker[];
+  route?: { origin: MapCoordinate; destination: MapCoordinate };
   followResponder?: boolean;
 };
 

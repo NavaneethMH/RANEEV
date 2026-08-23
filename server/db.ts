@@ -1,8 +1,9 @@
 /* RANEEV database access — all credential and incident queries return the minimum fields needed for server authorization. */
 import { and, asc, desc, eq, isNull, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
-import type { AppRole, EmergencyType, Incident, IncidentEvent, InsertUser, User, VolunteerAvailability } from "../drizzle/schema";
+import type { AppRole, EmergencyType, GhrEscalation, GhrSeverity, Incident, IncidentEvent, InsertUser, User, VolunteerAvailability } from "../drizzle/schema";
 import { incidentEvents, incidents, users } from "../drizzle/schema";
+import { canCloseGoldenHourResponse, isGoldenHourActive } from "./ghr/policy";
 import { canTransition, lifecycleEventFor, type ManagedIncidentStatus } from "./incidents/lifecycle";
 
 let _db: ReturnType<typeof drizzle> | null = null;
@@ -117,6 +118,14 @@ export async function getIncidentWithResponder(publicId: string): Promise<Incide
   return row[0] ? { ...row[0].incident, responderName: row[0].responderName } : null;
 }
 
+export type GoldenHourIncident = IncidentWithResponder & { responderAvailability: VolunteerAvailability | null };
+
+export async function getGoldenHourIncident(publicId: string): Promise<GoldenHourIncident | null> {
+  const database = await requireDb();
+  const row = await database.select({ incident: incidents, responderName: users.name, responderAvailability: users.volunteerAvailability }).from(incidents).leftJoin(users, eq(incidents.assignedVolunteerId, users.id)).where(eq(incidents.publicId, publicId)).limit(1);
+  return row[0] ? { ...row[0].incident, responderName: row[0].responderName, responderAvailability: row[0].responderAvailability } : null;
+}
+
 export async function getIncidentMapSnapshot(publicId: string): Promise<IncidentMapSnapshot | null> {
   const incident = await getIncidentWithResponder(publicId);
   if (!incident) return null;
@@ -134,6 +143,57 @@ export async function listIncidentEvents(incidentId: number): Promise<IncidentEv
 async function addIncidentEvent(input: { incidentId: number; actorUserId: number | null; eventType: IncidentEvent["eventType"]; note: string }) {
   const database = await requireDb();
   await database.insert(incidentEvents).values(input);
+}
+
+function ensureGoldenHourActive(incident: Incident) {
+  if (!isGoldenHourActive(incident)) throw new Error("Golden Hour Response is closed for this incident.");
+}
+
+export async function updateGoldenHourSeverity(publicId: string, actorUserId: number, severity: GhrSeverity) {
+  const incident = await getIncidentByPublicId(publicId);
+  if (!incident) return null;
+  ensureGoldenHourActive(incident);
+  const database = await requireDb();
+  await database.update(incidents).set({ ghrSeverity: severity }).where(eq(incidents.id, incident.id));
+  await addIncidentEvent({ incidentId: incident.id, actorUserId, eventType: "severity_assessed", note: `Operational severity set to ${severity.replace("_", " ")}.` });
+  return getGoldenHourIncident(publicId);
+}
+
+export async function selectGoldenHourFacility(publicId: string, actorUserId: number, input: { name: string; placeId: string | null; latitudeE6: number; longitudeE6: number; distanceMeters: number | null; etaMinutes: number | null }) {
+  const incident = await getIncidentByPublicId(publicId);
+  if (!incident) return null;
+  ensureGoldenHourActive(incident);
+  const database = await requireDb();
+  await database.update(incidents).set({
+    ghrFacilityName: input.name,
+    ghrFacilityPlaceId: input.placeId,
+    ghrFacilityLatitudeE6: input.latitudeE6,
+    ghrFacilityLongitudeE6: input.longitudeE6,
+    ghrFacilityDistanceMeters: input.distanceMeters,
+    ghrFacilityEtaMinutes: input.etaMinutes,
+    ghrFacilitySelectedAt: new Date(),
+  }).where(eq(incidents.id, incident.id));
+  await addIncidentEvent({ incidentId: incident.id, actorUserId, eventType: "facility_selected", note: `Appropriate care facility selected: ${input.name}.` });
+  return getGoldenHourIncident(publicId);
+}
+
+export async function updateGoldenHourEscalation(publicId: string, actorUserId: number, input: { escalation: Exclude<GhrEscalation, "not_escalated">; note: string | null }) {
+  const incident = await getIncidentByPublicId(publicId);
+  if (!incident) return null;
+  ensureGoldenHourActive(incident);
+  const database = await requireDb();
+  await database.update(incidents).set({ ghrEscalation: input.escalation, ghrEscalationNote: input.note, ghrEscalatedAt: new Date() }).where(eq(incidents.id, incident.id));
+  await addIncidentEvent({ incidentId: incident.id, actorUserId, eventType: "escalated", note: `Golden Hour Response escalation: ${input.escalation.replaceAll("_", " ")}.${input.note ? ` ${input.note}` : ""}` });
+  return getGoldenHourIncident(publicId);
+}
+
+export async function resolveGoldenHourIncident(publicId: string, actorUserId: number) {
+  const incident = await getIncidentByPublicId(publicId);
+  if (!incident) return null;
+  if (!canCloseGoldenHourResponse(incident)) throw new Error("Golden Hour resolution is available after the responder has arrived or assistance has started.");
+  const resolved = await transitionIncident({ incident, to: "resolved", actorUserId, note: "Golden Hour Response resolved by operations coordination." });
+  if (incident.assignedVolunteerId) await setVolunteerAvailability(incident.assignedVolunteerId, { availability: "offline" });
+  return resolved;
 }
 
 export async function createIncident(input: { publicId: string; createdByUserId: number; emergencyType: EmergencyType; locationLabel: string; latitudeE6: number; longitudeE6: number; accuracyMeters: number; description: string | null }) {

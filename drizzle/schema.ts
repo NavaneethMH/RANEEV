@@ -13,7 +13,9 @@ export const profileStatuses = ["active", "pending_verification", "suspended"] a
 export const volunteerAvailabilityStates = ["offline", "available", "busy"] as const;
 export const incidentStatuses = ["active", "searching", "accepted", "en_route", "arrived", "assisting", "resolved", "cancelled"] as const;
 export const emergencyTypes = ["medical", "road_accident", "injury", "fire", "unconscious", "other"] as const;
-export const incidentEventTypes = ["created", "search_started", "responder_accepted", "en_route", "arrived", "assistance_started", "resolved"] as const;
+export const ghrSeverityLevels = ["unassessed", "standard", "urgent", "critical"] as const;
+export const ghrEscalationStates = ["not_escalated", "monitoring", "facility_contacted", "professional_services_contacted"] as const;
+export const incidentEventTypes = ["created", "search_started", "responder_accepted", "en_route", "arrived", "assistance_started", "severity_assessed", "facility_selected", "escalated", "resolved"] as const;
 
 /**
  * `openId` remains the stable internal subject key for template compatibility.
@@ -60,6 +62,17 @@ export const incidents = mysqlTable("incidents", {
   acceptedAt: timestamp("acceptedAt"),
   arrivedAt: timestamp("arrivedAt"),
   assistanceStartedAt: timestamp("assistanceStartedAt"),
+  ghrSeverity: mysqlEnum("ghrSeverity", ghrSeverityLevels).notNull().default("unassessed"),
+  ghrEscalation: mysqlEnum("ghrEscalation", ghrEscalationStates).notNull().default("not_escalated"),
+  ghrEscalationNote: varchar("ghrEscalationNote", { length: 500 }),
+  ghrEscalatedAt: timestamp("ghrEscalatedAt"),
+  ghrFacilityName: varchar("ghrFacilityName", { length: 255 }),
+  ghrFacilityPlaceId: varchar("ghrFacilityPlaceId", { length: 255 }),
+  ghrFacilityLatitudeE6: int("ghrFacilityLatitudeE6"),
+  ghrFacilityLongitudeE6: int("ghrFacilityLongitudeE6"),
+  ghrFacilityDistanceMeters: int("ghrFacilityDistanceMeters"),
+  ghrFacilityEtaMinutes: int("ghrFacilityEtaMinutes"),
+  ghrFacilitySelectedAt: timestamp("ghrFacilitySelectedAt"),
   resolvedAt: timestamp("resolvedAt"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
@@ -83,6 +96,8 @@ export type AppRole = (typeof appRoles)[number];
 export type ProfileStatus = (typeof profileStatuses)[number];
 export type VolunteerAvailability = (typeof volunteerAvailabilityStates)[number];
 export type EmergencyType = (typeof emergencyTypes)[number];
+export type GhrSeverity = (typeof ghrSeverityLevels)[number];
+export type GhrEscalation = (typeof ghrEscalationStates)[number];
 export type IncidentEventType = (typeof incidentEventTypes)[number];
 export type User = typeof users.$inferSelect;
 export type InsertUser = typeof users.$inferInsert;

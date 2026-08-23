@@ -46,7 +46,7 @@ export const navByRole = {
     ["Dashboard", "/volunteer"], ["Availability", "/volunteer/availability"], ["Nearby emergency", "/volunteer/nearby"], ["Active response", "/volunteer/active"], ["Response history", "/volunteer/history"], ["Verification", "/volunteer/profile"],
   ],
   coordinator: [
-    ["Command center", "/coordinator"], ["Incident list", "/coordinator/incidents"], ["Incident details", "/coordinator/details"], ["Live map", "/coordinator/map"], ["Responders", "/coordinator/responders"], ["Analytics", "/coordinator/analytics"],
+    ["Command center", "/coordinator"], ["Golden Hour", "/coordinator/ghr"], ["Incident list", "/coordinator/incidents"], ["Incident details", "/coordinator/details"], ["Live map", "/coordinator/map"], ["Responders", "/coordinator/responders"], ["Analytics", "/coordinator/analytics"],
   ],
   admin: [
     ["Admin dashboard", "/admin"], ["User management", "/admin/users"], ["Volunteer verification", "/admin/verification"], ["Incident management", "/admin/incidents"], ["Audit logs", "/admin/audit"],

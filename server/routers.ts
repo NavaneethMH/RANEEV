@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import type { AppRole, User } from "../drizzle/schema";
-import { appRoles, emergencyTypes } from "../drizzle/schema";
+import { appRoles, emergencyTypes, ghrEscalationStates, ghrSeverityLevels } from "../drizzle/schema";
 import { canChangeRole, canReadIncident } from "./auth/authorization";
 import { clearCredentialSession, establishCredentialSession, hashPassword, validatePassword, verifyPassword } from "./auth/credentials";
 import * as db from "./db";
@@ -20,6 +20,13 @@ const incidentInput = z.object({ emergencyType: z.enum(emergencyTypes), location
 
 function requireVerifiedVolunteer(user: User) {
   if (user.role !== "volunteer" || user.profileStatus !== "active") throw new TRPCError({ code: "FORBIDDEN", message: "Volunteer verification is required before this response action." });
+}
+
+async function requireGoldenHourIncidentAccess(user: User, publicId: string) {
+  const incident = await db.getIncidentByPublicId(publicId);
+  if (!incident) throw new TRPCError({ code: "NOT_FOUND", message: "Incident not found." });
+  if (!canReadIncident(user, incident)) throw new TRPCError({ code: "FORBIDDEN", message: "You do not have permission to access this Golden Hour Response." });
+  return incident;
 }
 
 export const appRouter = router({
@@ -150,6 +157,34 @@ export const appRouter = router({
     updateLocation: roleProcedure(["volunteer"]).input(z.object({ publicId: z.string().min(3).max(40), latitude: z.number().min(-90).max(90), longitude: z.number().min(-180).max(180) })).mutation(async ({ ctx, input }) => {
       try { requireVerifiedVolunteer(ctx.user); const incident = await db.updateResponderPosition(input.publicId, ctx.user.id, Math.round(input.latitude * 1_000_000), Math.round(input.longitude * 1_000_000)); if (!incident) throw new TRPCError({ code: "NOT_FOUND", message: "Incident not found." }); return incident; }
       catch (error) { if (error instanceof TRPCError) throw error; throw new TRPCError({ code: "FORBIDDEN", message: error instanceof Error ? error.message : "Responder location could not be updated." }); }
+    }),
+  }),
+  ghr: router({
+    overview: protectedProcedure.input(z.object({ publicId: z.string().min(3).max(40) })).query(async ({ ctx, input }) => {
+      await requireGoldenHourIncidentAccess(ctx.user, input.publicId);
+      const incident = await db.getGoldenHourIncident(input.publicId);
+      if (!incident) throw new TRPCError({ code: "NOT_FOUND", message: "Incident not found." });
+      return incident;
+    }),
+    assessSeverity: roleProcedure(["coordinator", "admin"]).input(z.object({ publicId: z.string().min(3).max(40), severity: z.enum(ghrSeverityLevels) })).mutation(async ({ ctx, input }) => {
+      await requireGoldenHourIncidentAccess(ctx.user, input.publicId);
+      try { const incident = await db.updateGoldenHourSeverity(input.publicId, ctx.user.id, input.severity); if (!incident) throw new TRPCError({ code: "NOT_FOUND", message: "Incident not found." }); return incident; }
+      catch (error) { if (error instanceof TRPCError) throw error; throw new TRPCError({ code: "CONFLICT", message: error instanceof Error ? error.message : "Severity could not be updated." }); }
+    }),
+    selectFacility: roleProcedure(["coordinator", "admin"]).input(z.object({ publicId: z.string().min(3).max(40), name: z.string().trim().min(2).max(255), placeId: z.string().trim().max(255).nullable(), latitude: z.number().min(-90).max(90), longitude: z.number().min(-180).max(180), distanceMeters: z.number().int().min(0).max(2_000_000).nullable(), etaMinutes: z.number().int().min(1).max(1_440).nullable() })).mutation(async ({ ctx, input }) => {
+      await requireGoldenHourIncidentAccess(ctx.user, input.publicId);
+      try { const incident = await db.selectGoldenHourFacility(input.publicId, ctx.user.id, { name: input.name, placeId: input.placeId, latitudeE6: Math.round(input.latitude * 1_000_000), longitudeE6: Math.round(input.longitude * 1_000_000), distanceMeters: input.distanceMeters, etaMinutes: input.etaMinutes }); if (!incident) throw new TRPCError({ code: "NOT_FOUND", message: "Incident not found." }); return incident; }
+      catch (error) { if (error instanceof TRPCError) throw error; throw new TRPCError({ code: "CONFLICT", message: error instanceof Error ? error.message : "Facility could not be selected." }); }
+    }),
+    escalate: roleProcedure(["coordinator", "admin"]).input(z.object({ publicId: z.string().min(3).max(40), escalation: z.enum(ghrEscalationStates).exclude(["not_escalated"]), note: z.string().trim().max(500).nullable() })).mutation(async ({ ctx, input }) => {
+      await requireGoldenHourIncidentAccess(ctx.user, input.publicId);
+      try { const incident = await db.updateGoldenHourEscalation(input.publicId, ctx.user.id, input); if (!incident) throw new TRPCError({ code: "NOT_FOUND", message: "Incident not found." }); return incident; }
+      catch (error) { if (error instanceof TRPCError) throw error; throw new TRPCError({ code: "CONFLICT", message: error instanceof Error ? error.message : "Escalation could not be recorded." }); }
+    }),
+    resolve: roleProcedure(["coordinator", "admin"]).input(z.object({ publicId: z.string().min(3).max(40) })).mutation(async ({ ctx, input }) => {
+      await requireGoldenHourIncidentAccess(ctx.user, input.publicId);
+      try { const incident = await db.resolveGoldenHourIncident(input.publicId, ctx.user.id); if (!incident) throw new TRPCError({ code: "NOT_FOUND", message: "Incident not found." }); return incident; }
+      catch (error) { if (error instanceof TRPCError) throw error; throw new TRPCError({ code: "CONFLICT", message: error instanceof Error ? error.message : "Golden Hour Response could not be resolved." }); }
     }),
   }),
   coordinator: router({
