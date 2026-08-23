@@ -4,7 +4,7 @@ import type { Incident, User } from "../drizzle/schema";
 import { canChangeRole, canReadIncident, hasRole } from "./auth/authorization";
 
 const baseUser = { id: 1, openId: "credential:test", name: "Test", email: "test@raneev.test", phone: null, passwordHash: "hash", loginMethod: "credentials", profileStatus: "active", sessionVersion: 1, createdAt: new Date(), updatedAt: new Date(), lastSignedIn: new Date() } as const;
-const incident = { id: 1, publicId: "ERN-TEST-001", createdByUserId: 1, assignedVolunteerId: 2, status: "active", createdAt: new Date(), updatedAt: new Date() } as Incident;
+const incident = { id: 1, publicId: "ERN-TEST-001", createdByUserId: 1, assignedVolunteerId: 2, status: "searching", emergencyType: "road_accident", locationLabel: "Test location", latitudeE6: 13198600, longitudeE6: 77710200, accuracyMeters: 18, description: null, responderEtaMinutes: null, acceptedAt: null, arrivedAt: null, resolvedAt: null, createdAt: new Date(), updatedAt: new Date() } as Incident;
 const asUser = (role: User["role"], id = 1) => ({ ...baseUser, id, role } as User);
 
 describe("RANEEV server authorization", () => {

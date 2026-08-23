@@ -14,3 +14,10 @@
 - [x] Verify logout cookie clearing, authenticated session restoration, registration, role-management rejection, and incident-ownership rejection through live tRPC procedures.
 - [x] Document a before-and-after visual comparison for representative public and protected screens at desktop and mobile breakpoints.
 - [x] Capture the final authenticated-flow verification and save a delivery checkpoint.
+- [x] Review and preserve the existing Citizen emergency screen layouts while connecting the golden-path workflow.
+- [x] Extend the incident model with emergency category, location, optional description, responder assignment, lifecycle status, and timeline data.
+- [x] Add server-side incident creation, citizen ownership, responder acceptance, tracking, arrival, and resolution procedures with transition validation.
+- [x] Connect Citizen Home, Emergency Type, Location Detection, Description, Confirmation, incident-created, search, live tracking, arrival, and resolved UI states to protected APIs.
+- [x] Provide a controlled development responder simulation that drives the golden path without bypassing authorization.
+- [x] Test citizen request creation and every permitted incident lifecycle transition, then capture representative workflow screens.
+- [x] Save a verified Citizen Emergency Request workflow checkpoint.

@@ -8,6 +8,20 @@
       "when": 1787487325872,
       "tag": "0000_wealthy_the_twelve",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "5",
+      "when": 1787488411073,
+      "tag": "0001_peaceful_revanche",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "5",
+      "when": 1787488576877,
+      "tag": "0002_true_psylocke",
+      "breakpoints": true
     }
   ]
 }

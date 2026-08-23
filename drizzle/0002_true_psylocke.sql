@@ -1,0 +1,1 @@
+ALTER TABLE `incidents` MODIFY COLUMN `status` enum('active','searching','accepted','en_route','arrived','resolved','cancelled') NOT NULL DEFAULT 'searching';

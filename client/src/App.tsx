@@ -6,6 +6,7 @@ import { Route, Switch } from "wouter";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { ThemeProvider } from "./contexts/ThemeContext";
 import { useAuth } from "./_core/hooks/useAuth";
+import { EmergencyDraftProvider } from "./contexts/EmergencyDraftContext";
 import { AccessDenied, AdminPortal, AuthPage, CitizenPortal, CoordinatorPortal, LandingPage, RoleSelection, VolunteerPortal } from "./pages/RaneevScreens";
 
 type RaneevRole = "citizen" | "volunteer" | "coordinator" | "admin";
@@ -17,6 +18,7 @@ function Router() { return <Switch>
   <Route path="/register">{() => <AuthPage kind="register" />}</Route>
   <Route path="/roles" component={RoleSelection} />
   <Route path="/access-denied" component={AccessDenied} />
+  <Route path="/citizen/live/:publicId">{({ publicId }) => <ProtectedWorkspace roles={["citizen"]}><CitizenPortal page="live" publicId={publicId} /></ProtectedWorkspace>}</Route>
   <Route path="/citizen/:page?">{({ page }) => <ProtectedWorkspace roles={["citizen"]}><CitizenPortal page={page} /></ProtectedWorkspace>}</Route>
   <Route path="/volunteer/:page?">{({ page }) => <ProtectedWorkspace roles={["volunteer"]}><VolunteerPortal page={page} /></ProtectedWorkspace>}</Route>
   <Route path="/coordinator/:page?">{({ page }) => <ProtectedWorkspace roles={["coordinator"]}><CoordinatorPortal page={page} /></ProtectedWorkspace>}</Route>
@@ -25,4 +27,4 @@ function Router() { return <Switch>
   <Route component={NotFound} />
 </Switch>; }
 
-export default function App() { return <ErrorBoundary><ThemeProvider defaultTheme="light"><TooltipProvider><Toaster position="top-right" richColors /><Router /></TooltipProvider></ThemeProvider></ErrorBoundary>; }
+export default function App() { return <ErrorBoundary><ThemeProvider defaultTheme="light"><EmergencyDraftProvider><TooltipProvider><Toaster position="top-right" richColors /><Router /></TooltipProvider></EmergencyDraftProvider></ThemeProvider></ErrorBoundary>; }
