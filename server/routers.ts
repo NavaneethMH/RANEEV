@@ -260,6 +260,28 @@ export const appRouter = router({
       if (process.env.NODE_ENV === "production") throw new TRPCError({ code: "FORBIDDEN", message: "Notification escalations are processed by the protected scheduled worker in production." });
       return processNotificationEscalations();
     }),
+    ageDevelopmentTimeoutFixture: roleProcedure(["coordinator", "admin"]).input(z.object({ publicId: z.string().min(3).max(40), kind: z.enum(["responder_search", "escalation"]) })).mutation(async ({ input }) => {
+      if (process.env.NODE_ENV === "production") throw new TRPCError({ code: "FORBIDDEN", message: "Development timeout fixtures are disabled in production." });
+      try {
+        const incident = await db.ageDevelopmentTimeoutFixture(input.publicId, input.kind);
+        if (!incident) throw new TRPCError({ code: "NOT_FOUND", message: "Incident not found." });
+        return incident;
+      } catch (error) {
+        if (error instanceof TRPCError) throw error;
+        throw new TRPCError({ code: "BAD_REQUEST", message: error instanceof Error ? error.message : "Timeout fixture could not be prepared." });
+      }
+    }),
+    cleanupDevelopmentTimeoutFixture: roleProcedure(["coordinator", "admin"]).input(z.object({ publicId: z.string().min(3).max(40) })).mutation(async ({ input }) => {
+      if (process.env.NODE_ENV === "production") throw new TRPCError({ code: "FORBIDDEN", message: "Development timeout fixtures are disabled in production." });
+      try {
+        const deleted = await db.deleteDevelopmentTimeoutFixture(input.publicId);
+        if (!deleted) throw new TRPCError({ code: "NOT_FOUND", message: "Incident not found." });
+        return { deleted } as const;
+      } catch (error) {
+        if (error instanceof TRPCError) throw error;
+        throw new TRPCError({ code: "BAD_REQUEST", message: error instanceof Error ? error.message : "Timeout fixture could not be cleaned up." });
+      }
+    }),
   }),
   demo: router({
     status: protectedProcedure.query(async ({ ctx }) => {

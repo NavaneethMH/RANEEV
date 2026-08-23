@@ -217,6 +217,40 @@ export async function listEscalatedIncidentsBefore(cutoff: Date) {
   return database.select().from(incidents).where(and(eq(incidents.isDemo, false), isNotNull(incidents.ghrEscalatedAt), lt(incidents.ghrEscalatedAt, cutoff), inArray(incidents.status, ["searching", "accepted", "en_route", "arrived", "assisting"]))).orderBy(asc(incidents.ghrEscalatedAt)).limit(100);
 }
 
+/** Development QA only: age an explicitly marked, unassigned searching fixture without touching live or Demo Mode records. */
+export async function ageDevelopmentTimeoutFixture(publicId: string, kind: "responder_search" | "escalation") {
+  const incident = await getIncidentByPublicId(publicId);
+  if (!incident) return null;
+  if (incident.isDemo || !incident.locationLabel.startsWith("QA timeout fixture ·") || incident.status !== "searching" || incident.assignedVolunteerId !== null) {
+    throw new Error("Only an unassigned QA timeout fixture in responder search can be aged.");
+  }
+  const database = await requireDb();
+  const overdueAt = new Date(Date.now() - 24 * 60 * 60 * 1_000);
+  if (kind === "escalation") {
+    if (!incident.ghrEscalatedAt) throw new Error("Escalation timeout fixture must be escalated before it is aged.");
+    await database.update(incidents).set({ ghrEscalatedAt: overdueAt, updatedAt: overdueAt }).where(eq(incidents.id, incident.id));
+  } else {
+    await database.update(incidents).set({ createdAt: overdueAt, updatedAt: overdueAt }).where(eq(incidents.id, incident.id));
+  }
+  return getIncidentByPublicId(publicId);
+}
+
+/** Development QA only: remove all artifacts for an explicitly marked fixture after controlled verification. */
+export async function deleteDevelopmentTimeoutFixture(publicId: string) {
+  const incident = await getIncidentByPublicId(publicId);
+  if (!incident) return false;
+  if (incident.isDemo || !incident.locationLabel.startsWith("QA timeout fixture ·") || incident.assignedVolunteerId !== null) {
+    throw new Error("Only an unassigned QA timeout fixture can be removed.");
+  }
+  const database = await requireDb();
+  await database.delete(notifications).where(eq(notifications.incidentId, incident.id));
+  await database.delete(aiAnalysisJobs).where(eq(aiAnalysisJobs.incidentId, incident.id));
+  await database.delete(aiIncidentAudits).where(eq(aiIncidentAudits.incidentId, incident.id));
+  await database.delete(incidentEvents).where(eq(incidentEvents.incidentId, incident.id));
+  await database.delete(incidents).where(eq(incidents.id, incident.id));
+  return true;
+}
+
 export async function getVolunteerReadiness(userId: number) {
   const user = await getUserById(userId);
   if (!user || user.role !== "volunteer") return null;

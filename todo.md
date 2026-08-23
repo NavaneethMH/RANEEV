@@ -93,3 +93,23 @@
 - [x] Document Demo Mode evidence, automated coverage, responsive evidence, and controlled-data isolation safeguards.
 - [x] Save the final verified deterministic Demo Mode delivery checkpoint.
 - [x] Save the actual verified Demo Mode delivery checkpoint and confirm its version URI.
+- [x] Create a RANEEV QA test matrix covering authentication, authorization, lifecycle, maps, notifications, AI, GHR, Demo Mode, data integrity, security, accessibility, responsiveness, performance, and error handling.
+- [x] Audit and execute authentication, session, role authorization, API validation, privacy, and secret-exposure checks; fix confirmed vulnerabilities.
+- [x] Exercise the Citizen-to-Volunteer-to-Coordinator emergency golden path, lifecycle rejection paths, concurrent acceptance, escalation, and multi-session updates.
+- [x] Verify maps, location-denial/fallback behavior, notifications, AI fallback, GHR timing, and Demo Mode isolation through functional and browser tests.
+- [x] Test major role workspaces across required mobile, tablet, and desktop viewports for accessibility and responsive defects; fix confirmed issues without redesign.
+- [x] Inspect meaningful request, polling, map, and Demo Mode performance behavior; fix only confirmed regressions.
+- [x] Add behavioral automated tests for any confirmed defects and rerun targeted plus full regression coverage.
+- [x] Produce the final QA report and classify residual limitations honestly.
+- [x] Save the verified full-system QA delivery checkpoint.
+- [x] Create fresh controlled timeout fixtures and complete notification timeout idempotency QA with recorded evidence.
+- [x] Execute explicit Citizen and Volunteer location-denied/unavailable fallback tests and record the safe user-facing results.
+- [x] Execute keyboard, focus, semantic-label, touch-target, non-color-status, and error-message accessibility QA on major screens.
+- [x] Measure polling, map-route reuse, Demo Mode runtime behavior, and production build size; record meaningful performance findings.
+- [x] Resolve or precisely document the measured interactive touch-target exceptions and verify non-color status and error-message accessibility.
+- [x] Capture measured browser request counts for polling and Demo Mode map-route reuse during live playback.
+- [x] Add a protected development-only timeout-fixture path that ages only explicitly created QA incidents and supports cleanup after notification idempotency verification.
+- [x] Correct the local credential-session cookie attributes so browser-based development QA retains authenticated sessions without weakening production cookie protections.
+- [x] Add a browser request-observation driver for Demo Mode responder movement that distinguishes tRPC polling from Google Maps directions traffic.
+- [x] Add development-only map route-invocation telemetry so the performance driver can prove a single generated route is reused during live Demo Mode movement.
+- [x] Prevent citizen live-map directions recalculation when only the responder marker position changes, while preserving a new route for a different incident or responder assignment.

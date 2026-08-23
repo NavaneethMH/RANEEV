@@ -1,6 +1,17 @@
 import type { EmergencyMapController, EmergencyMapData, EmergencyMapMarker, RouteMetrics } from "./contracts";
+import { buildEmergencyRouteKey } from "@shared/map-route-cache";
 
 const markerColors = { current: "#0e4e78", incident: "#d83232", responder: "#247352", hospital: "#8f5408" } as const;
+
+type MapTelemetry = { directionsCalls: number; hospitalSearchCalls: number };
+
+function recordDevelopmentMapTelemetry(key: keyof MapTelemetry) {
+  if (!import.meta.env.DEV) return;
+  const scope = window as Window & { __raneevMapTelemetry?: MapTelemetry };
+  const telemetry = scope.__raneevMapTelemetry ?? { directionsCalls: 0, hospitalSearchCalls: 0 };
+  telemetry[key] += 1;
+  scope.__raneevMapTelemetry = telemetry;
+}
 
 function markerElement(kind: EmergencyMapMarker["kind"]) {
   const marker = document.createElement("div");
@@ -44,6 +55,7 @@ export async function mountGoogleEmergencyMap(map: google.maps.Map, initialData:
     const key = `${data.incident.position.lat.toFixed(4)}:${data.incident.position.lng.toFixed(4)}`;
     if (key === lastHospitalKey) return;
     lastHospitalKey = key;
+    recordDevelopmentMapTelemetry("hospitalSearchCalls");
     const token = ++hospitalSearchToken;
     const service = new google.maps.places.PlacesService(map);
     service.nearbySearch({ location: data.incident.position, radius: 5_000, type: "hospital" }, (results, status) => {
@@ -61,11 +73,16 @@ export async function mountGoogleEmergencyMap(map: google.maps.Map, initialData:
     const routeOrigin = data.route?.origin ?? data.responder?.position;
     const routeDestination = data.route?.destination ?? data.incident.position;
     if (routeOrigin) {
-      const routeKey = data.route
-        ? `fixed:${data.route.origin.lat.toFixed(5)}:${data.route.origin.lng.toFixed(5)}:${data.route.destination.lat.toFixed(5)}:${data.route.destination.lng.toFixed(5)}`
-        : `live:${routeOrigin.lat.toFixed(5)}:${routeOrigin.lng.toFixed(5)}:${routeDestination.lat.toFixed(5)}:${routeDestination.lng.toFixed(5)}`;
+      const routeKey = buildEmergencyRouteKey({
+        incidentId: data.incident.id,
+        incidentPosition: data.incident.position,
+        responderId: data.responder?.id ?? null,
+        responderPosition: data.responder?.position ?? null,
+        explicitRoute: data.route ?? null,
+      });
       if (routeKey !== lastRouteKey) {
         lastRouteKey = routeKey;
+        recordDevelopmentMapTelemetry("directionsCalls");
         directions.route({ origin: routeOrigin, destination: routeDestination, travelMode: google.maps.TravelMode.DRIVING }, (result, status) => {
           if (status !== google.maps.DirectionsStatus.OK || !result) { onRouteMetrics?.(null); return; }
           renderer.setDirections(result);
