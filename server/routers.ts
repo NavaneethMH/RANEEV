@@ -81,6 +81,12 @@ export const appRouter = router({
       if (!canReadIncident(ctx.user, incident)) throw new TRPCError({ code: "FORBIDDEN", message: "You do not have permission to access this incident." });
       return db.listIncidentEvents(incident.id);
     }),
+    mapSnapshot: protectedProcedure.input(z.object({ publicId: z.string().min(3).max(40) })).query(async ({ ctx, input }) => {
+      const snapshot = await db.getIncidentMapSnapshot(input.publicId);
+      if (!snapshot) throw new TRPCError({ code: "NOT_FOUND", message: "Incident not found." });
+      if (!canReadIncident(ctx.user, snapshot.incident)) throw new TRPCError({ code: "FORBIDDEN", message: "You do not have permission to access this incident map." });
+      return snapshot;
+    }),
     resolve: roleProcedure(["citizen"]).input(z.object({ publicId: z.string().min(3).max(40) })).mutation(async ({ ctx, input }) => {
       try { const incident = await db.resolveIncident(input.publicId, ctx.user.id); if (!incident) throw new TRPCError({ code: "NOT_FOUND", message: "Incident not found." }); return incident; }
       catch (error) { if (error instanceof TRPCError) throw error; throw new TRPCError({ code: "FORBIDDEN", message: error instanceof Error ? error.message : "Incident could not be resolved." }); }
@@ -88,6 +94,10 @@ export const appRouter = router({
     simulateProgress: roleProcedure(["citizen"]).input(z.object({ publicId: z.string().min(3).max(40) })).mutation(async ({ ctx, input }) => {
       try { const incident = await db.advanceDevelopmentSimulation(input.publicId, ctx.user.id); if (!incident) throw new TRPCError({ code: "NOT_FOUND", message: "Incident not found." }); return incident; }
       catch (error) { if (error instanceof TRPCError) throw error; throw new TRPCError({ code: "BAD_REQUEST", message: error instanceof Error ? error.message : "Simulation could not progress." }); }
+    }),
+    simulateResponderMovement: roleProcedure(["citizen"]).input(z.object({ publicId: z.string().min(3).max(40) })).mutation(async ({ ctx, input }) => {
+      try { const incident = await db.advanceDevelopmentResponderMovement(input.publicId, ctx.user.id); if (!incident) throw new TRPCError({ code: "NOT_FOUND", message: "Incident not found." }); return incident; }
+      catch (error) { if (error instanceof TRPCError) throw error; throw new TRPCError({ code: "BAD_REQUEST", message: error instanceof Error ? error.message : "Responder movement could not be updated." }); }
     }),
   }),
   volunteer: router({
@@ -103,6 +113,10 @@ export const appRouter = router({
     arrive: roleProcedure(["volunteer"]).input(z.object({ publicId: z.string().min(3).max(40) })).mutation(async ({ ctx, input }) => {
       try { const incident = await db.volunteerAdvance(input.publicId, ctx.user.id, "arrived"); if (!incident) throw new TRPCError({ code: "NOT_FOUND", message: "Incident not found." }); return incident; }
       catch (error) { if (error instanceof TRPCError) throw error; throw new TRPCError({ code: "FORBIDDEN", message: error instanceof Error ? error.message : "Arrival could not be confirmed." }); }
+    }),
+    updateLocation: roleProcedure(["volunteer"]).input(z.object({ publicId: z.string().min(3).max(40), latitude: z.number().min(-90).max(90), longitude: z.number().min(-180).max(180) })).mutation(async ({ ctx, input }) => {
+      try { const incident = await db.updateResponderPosition(input.publicId, ctx.user.id, Math.round(input.latitude * 1_000_000), Math.round(input.longitude * 1_000_000)); if (!incident) throw new TRPCError({ code: "NOT_FOUND", message: "Incident not found." }); return incident; }
+      catch (error) { if (error instanceof TRPCError) throw error; throw new TRPCError({ code: "FORBIDDEN", message: error instanceof Error ? error.message : "Responder location could not be updated." }); }
     }),
   }),
   coordinator: router({

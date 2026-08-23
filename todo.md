@@ -21,3 +21,15 @@
 - [x] Provide a controlled development responder simulation that drives the golden path without bypassing authorization.
 - [x] Test citizen request creation and every permitted incident lifecycle transition, then capture representative workflow screens.
 - [x] Save a verified Citizen Emergency Request workflow checkpoint.
+- [x] Confirm the configured mapping provider and inspect the existing map integration surface.
+- [x] Define provider-agnostic map types, adapter boundaries, and protected incident-location data contracts.
+- [x] Persist or safely derive current location, responder position, hospital markers, route geometry, distance, ETA, and map view state.
+- [x] Connect the Citizen confirmation and live-tracking screens to authorized map data, markers, routing, recentering, and responder movement.
+- [x] Add a development-safe live responder movement simulation without weakening incident ownership rules.
+- [x] Verify desktop and mobile emergency mapping behavior, provider fallbacks, and authorization boundaries.
+- [x] Save a verified mapped emergency workflow checkpoint.
+- [x] Provide and verify a clear degraded-map fallback when the selected provider cannot load.
+- [x] Add explicit automated or live denial checks for unauthorized map snapshots and responder-location updates.
+- [x] Save the post-mapping delivery checkpoint after closing the remaining verification gaps.
+- [x] Force and verify the degraded emergency-map fallback at desktop and mobile sizes.
+- [x] Save the final post-mapping checkpoint after fallback verification.

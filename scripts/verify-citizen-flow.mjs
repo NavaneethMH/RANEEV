@@ -37,6 +37,8 @@ try {
   await capture("04-responder-accepted");
   await page.getByRole("button", { name: "Simulate responder departure" }).click();
   await page.waitForTimeout(400);
+  await page.getByRole("button", { name: "Refresh responder position" }).click();
+  await page.waitForTimeout(400);
   await capture("05-live-tracking-en-route");
   await page.getByRole("button", { name: "Simulate help arrival" }).click();
   await page.waitForTimeout(400);

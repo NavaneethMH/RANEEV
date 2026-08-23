@@ -86,11 +86,24 @@ export async function getIncidentByPublicId(publicId: string) {
 }
 
 export type IncidentWithResponder = Incident & { responderName: string | null };
+export type IncidentMapSnapshot = {
+  incident: IncidentWithResponder;
+  responder: { userId: number; name: string; latitude: number; longitude: number; updatedAt: Date | null } | null;
+};
 
 export async function getIncidentWithResponder(publicId: string): Promise<IncidentWithResponder | null> {
   const database = await requireDb();
   const row = await database.select({ incident: incidents, responderName: users.name }).from(incidents).leftJoin(users, eq(incidents.assignedVolunteerId, users.id)).where(eq(incidents.publicId, publicId)).limit(1);
   return row[0] ? { ...row[0].incident, responderName: row[0].responderName } : null;
+}
+
+export async function getIncidentMapSnapshot(publicId: string): Promise<IncidentMapSnapshot | null> {
+  const incident = await getIncidentWithResponder(publicId);
+  if (!incident) return null;
+  const responder = incident.assignedVolunteerId && incident.responderName && incident.responderLatitudeE6 !== null && incident.responderLongitudeE6 !== null
+    ? { userId: incident.assignedVolunteerId, name: incident.responderName, latitude: incident.responderLatitudeE6 / 1_000_000, longitude: incident.responderLongitudeE6 / 1_000_000, updatedAt: incident.responderLocationUpdatedAt }
+    : null;
+  return { incident, responder };
 }
 
 export async function listIncidentEvents(incidentId: number): Promise<IncidentEvent[]> {
@@ -133,10 +146,19 @@ export async function acceptIncident(publicId: string, volunteerUserId: number) 
   if (!incident) return null;
   if (incident.status !== "searching" || incident.assignedVolunteerId) throw new Error("This incident is no longer available for acceptance.");
   const database = await requireDb();
-  await database.update(incidents).set({ assignedVolunteerId: volunteerUserId }).where(eq(incidents.id, incident.id));
+  await database.update(incidents).set({ assignedVolunteerId: volunteerUserId, responderLatitudeE6: incident.latitudeE6 + 18_000, responderLongitudeE6: incident.longitudeE6 - 12_000, responderLocationUpdatedAt: new Date() }).where(eq(incidents.id, incident.id));
   const refreshed = await getIncidentByPublicId(publicId);
   if (!refreshed) throw new Error("Responder assignment did not return an incident");
   return transitionIncident({ incident: refreshed, to: "accepted", actorUserId: volunteerUserId, note: "A verified responder accepted your request.", responderEtaMinutes: 8 });
+}
+
+export async function updateResponderPosition(publicId: string, volunteerUserId: number, latitudeE6: number, longitudeE6: number) {
+  const incident = await getIncidentByPublicId(publicId);
+  if (!incident) return null;
+  if (incident.assignedVolunteerId !== volunteerUserId) throw new Error("Only the assigned responder can update this map position.");
+  const database = await requireDb();
+  await database.update(incidents).set({ responderLatitudeE6: latitudeE6, responderLongitudeE6: longitudeE6, responderLocationUpdatedAt: new Date() }).where(eq(incidents.id, incident.id));
+  return getIncidentByPublicId(publicId);
 }
 
 export async function volunteerAdvance(publicId: string, volunteerUserId: number, to: Extract<ManagedIncidentStatus, "en_route" | "arrived">) {
@@ -168,6 +190,21 @@ export async function advanceDevelopmentSimulation(publicId: string, citizenUser
   if (incident.status === "en_route") return volunteerAdvance(publicId, incident.assignedVolunteerId, "arrived");
   if (incident.status === "arrived") return resolveIncident(publicId, citizenUserId);
   throw new Error("This incident has reached the end of the development simulation.");
+}
+
+export async function advanceDevelopmentResponderMovement(publicId: string, citizenUserId: number) {
+  if (process.env.NODE_ENV === "production") throw new Error("Development responder movement is disabled in production.");
+  const incident = await getIncidentByPublicId(publicId);
+  if (!incident) return null;
+  if (incident.createdByUserId !== citizenUserId) throw new Error("Only the requesting citizen can simulate this responder movement.");
+  if (!incident.assignedVolunteerId || !["accepted", "en_route"].includes(incident.status)) throw new Error("A responder must be accepted or en route before movement can be simulated.");
+  const startLat = incident.responderLatitudeE6 ?? incident.latitudeE6 + 18_000;
+  const startLng = incident.responderLongitudeE6 ?? incident.longitudeE6 - 12_000;
+  const latitudeE6 = Math.round(startLat + (incident.latitudeE6 - startLat) * 0.42);
+  const longitudeE6 = Math.round(startLng + (incident.longitudeE6 - startLng) * 0.42);
+  const database = await requireDb();
+  await database.update(incidents).set({ responderLatitudeE6: latitudeE6, responderLongitudeE6: longitudeE6, responderLocationUpdatedAt: new Date(), responderEtaMinutes: Math.max(1, (incident.responderEtaMinutes ?? 8) - 2) }).where(eq(incidents.id, incident.id));
+  return getIncidentByPublicId(publicId);
 }
 
 export async function getActiveIncidentForCitizen(citizenUserId: number) {
