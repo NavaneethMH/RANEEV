@@ -1,8 +1,10 @@
 /* RANEEV database access — all credential and incident queries return the minimum fields needed for server authorization. */
 import { and, asc, desc, eq, isNull, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
-import type { AppRole, EmergencyType, GhrEscalation, GhrSeverity, Incident, IncidentEvent, InsertUser, User, VolunteerAvailability } from "../drizzle/schema";
-import { incidentEvents, incidents, users } from "../drizzle/schema";
+import type { AiAnalysisJob, AppRole, EmergencyType, GhrEscalation, GhrSeverity, Incident, IncidentEvent, InsertUser, User, VolunteerAvailability } from "../drizzle/schema";
+import { aiAnalysisJobs, aiIncidentAudits, incidentEvents, incidents, users } from "../drizzle/schema";
+import type { ResponderType } from "./ai/contracts";
+import { parseResponderSkills, scoreResponders } from "./ai/matching";
 import { averageAcceptanceMinutes, coordinatorPriority } from "./coordinator/metrics";
 import { canCloseGoldenHourResponse, isGoldenHourActive } from "./ghr/policy";
 import { canTransition, lifecycleEventFor, type ManagedIncidentStatus } from "./incidents/lifecycle";
@@ -107,6 +109,12 @@ export async function getIncidentByPublicId(publicId: string) {
   return result[0] ?? null;
 }
 
+export async function getIncidentById(id: number) {
+  const database = await requireDb();
+  const result = await database.select().from(incidents).where(eq(incidents.id, id)).limit(1);
+  return result[0] ?? null;
+}
+
 export type IncidentWithResponder = Incident & { responderName: string | null };
 export type IncidentMapSnapshot = {
   incident: IncidentWithResponder;
@@ -139,6 +147,79 @@ export async function getIncidentMapSnapshot(publicId: string): Promise<Incident
 export async function listIncidentEvents(incidentId: number): Promise<IncidentEvent[]> {
   const database = await requireDb();
   return database.select().from(incidentEvents).where(eq(incidentEvents.incidentId, incidentId)).orderBy(asc(incidentEvents.createdAt), asc(incidentEvents.id));
+}
+
+export async function enqueueAiAnalysisJob(incidentId: number) {
+  const database = await requireDb();
+  const existing = await database.select().from(aiAnalysisJobs).where(eq(aiAnalysisJobs.incidentId, incidentId)).limit(1);
+  if (existing[0]) return existing[0];
+  await database.insert(aiAnalysisJobs).values({ incidentId, status: "pending" });
+  const queued = await database.select().from(aiAnalysisJobs).where(eq(aiAnalysisJobs.incidentId, incidentId)).limit(1);
+  if (!queued[0]) throw new Error("AI analysis queue entry was not persisted.");
+  return queued[0];
+}
+
+export async function listPendingAiAnalysisJobs(limit = 10) {
+  const database = await requireDb();
+  return database.select().from(aiAnalysisJobs).where(eq(aiAnalysisJobs.status, "pending")).orderBy(asc(aiAnalysisJobs.scheduledAt), asc(aiAnalysisJobs.id)).limit(Math.min(Math.max(limit, 1), 25));
+}
+
+export async function claimAiAnalysisJob(id: number): Promise<AiAnalysisJob | null> {
+  const database = await requireDb();
+  const job = (await database.select().from(aiAnalysisJobs).where(eq(aiAnalysisJobs.id, id)).limit(1))[0];
+  if (!job || job.status !== "pending") return null;
+  await database.update(aiAnalysisJobs).set({ status: "processing", lockedAt: new Date(), attemptCount: job.attemptCount + 1 }).where(and(eq(aiAnalysisJobs.id, id), eq(aiAnalysisJobs.status, "pending")));
+  const claimed = (await database.select().from(aiAnalysisJobs).where(eq(aiAnalysisJobs.id, id)).limit(1))[0];
+  return claimed?.status === "processing" ? claimed : null;
+}
+
+export async function completeAiAnalysisJob(id: number) {
+  const database = await requireDb();
+  await database.update(aiAnalysisJobs).set({ status: "completed", completedAt: new Date(), lastErrorCode: null }).where(eq(aiAnalysisJobs.id, id));
+}
+
+export async function retryOrFailAiAnalysisJob(id: number, errorCode: string) {
+  const database = await requireDb();
+  const job = (await database.select().from(aiAnalysisJobs).where(eq(aiAnalysisJobs.id, id)).limit(1))[0];
+  if (!job) return;
+  await database.update(aiAnalysisJobs).set({ status: job.attemptCount >= 3 ? "failed" : "pending", lastErrorCode: errorCode.slice(0, 120), lockedAt: null, scheduledAt: new Date() }).where(eq(aiAnalysisJobs.id, id));
+}
+
+export async function addAiIncidentAudit(input: { incidentId: number | null; actorUserId?: number | null; operation: "incident_enrichment" | "coordinator_assistant"; status: "succeeded" | "failed" | "fallback"; modelIdentifier?: string | null; inputMetadata: string; outputJson?: string | null; confidencePercent?: number | null; failureCode?: string | null; durationMs: number }) {
+  const database = await requireDb();
+  await database.insert(aiIncidentAudits).values({ ...input, inputMetadata: input.inputMetadata.slice(0, 500), outputJson: input.outputJson?.slice(0, 6_000) ?? null, confidencePercent: input.confidencePercent ?? null, failureCode: input.failureCode?.slice(0, 120) ?? null, durationMs: Math.max(0, Math.round(input.durationMs)) });
+}
+
+export async function getLatestAiInsight(incidentId: number) {
+  const database = await requireDb();
+  const rows = await database.select().from(aiIncidentAudits).where(and(eq(aiIncidentAudits.incidentId, incidentId), eq(aiIncidentAudits.operation, "incident_enrichment"))).orderBy(desc(aiIncidentAudits.createdAt), desc(aiIncidentAudits.id)).limit(1);
+  return rows[0] ?? null;
+}
+
+export async function getAiAnalysisJobForIncident(incidentId: number) {
+  const database = await requireDb();
+  const rows = await database.select().from(aiAnalysisJobs).where(eq(aiAnalysisJobs.incidentId, incidentId)).limit(1);
+  return rows[0] ?? null;
+}
+
+export async function listAiAudits(limit = 100) {
+  const database = await requireDb();
+  return database.select({ audit: aiIncidentAudits, publicId: incidents.publicId }).from(aiIncidentAudits).leftJoin(incidents, eq(aiIncidentAudits.incidentId, incidents.id)).orderBy(desc(aiIncidentAudits.createdAt), desc(aiIncidentAudits.id)).limit(Math.min(Math.max(limit, 1), 200));
+}
+
+export async function getResponderRecommendationsForIncident(incident: Incident, requiredSkills: ResponderType[]) {
+  const database = await requireDb();
+  const responders = await database.select().from(users).where(eq(users.role, "volunteer")).limit(200);
+  return scoreResponders(responders.flatMap(responder => {
+    if (responder.profileStatus !== "active" || responder.volunteerAvailability !== "available" || !responder.verifiedAt || responder.volunteerLatitudeE6 === null || responder.volunteerLongitudeE6 === null) return [];
+    return [{ userId: responder.id, name: responder.name, distanceMeters: distanceMeters(responder.volunteerLatitudeE6, responder.volunteerLongitudeE6, incident.latitudeE6, incident.longitudeE6), availability: responder.volunteerAvailability, verified: true, skills: parseResponderSkills(responder.volunteerSkills) }];
+  }), requiredSkills).filter(responder => responder.distanceMeters <= 10_000).slice(0, 5);
+}
+
+export async function setVolunteerSkills(userId: number, skills: string[]) {
+  const database = await requireDb();
+  const normalized = skills.filter(skill => typeof skill === "string").map(skill => skill.slice(0, 40)).slice(0, 10);
+  await database.update(users).set({ volunteerSkills: JSON.stringify(normalized) }).where(and(eq(users.id, userId), eq(users.role, "volunteer")));
 }
 
 async function addIncidentEvent(input: { incidentId: number; actorUserId: number | null; eventType: IncidentEvent["eventType"]; note: string }) {
@@ -204,6 +285,7 @@ export async function createIncident(input: { publicId: string; createdByUserId:
   if (!created) throw new Error("Incident creation did not return an incident");
   await addIncidentEvent({ incidentId: created.id, actorUserId: input.createdByUserId, eventType: "created", note: "Emergency request confirmed." });
   await addIncidentEvent({ incidentId: created.id, actorUserId: null, eventType: "search_started", note: "Searching verified nearby responders." });
+  enqueueAiAnalysisJob(created.id).catch(error => console.warn("[AI queue] Incident enrichment was not queued:", error instanceof Error ? error.message : error));
   return created;
 }
 

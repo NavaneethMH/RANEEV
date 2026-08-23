@@ -26,4 +26,6 @@ export async function ensureDevelopmentDemoAccounts() {
       profileStatus: account.role === "volunteer" ? "pending_verification" : "active",
     });
   }
+  const demoVolunteer = await db.getUserByEmail("volunteer.demo@raneev.test");
+  if (demoVolunteer && demoVolunteer.volunteerSkills === "[]") await db.setVolunteerSkills(demoVolunteer.id, ["medical", "general_response"]);
 }

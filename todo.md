@@ -59,3 +59,13 @@
 - [x] Verify coordinator-only access, metric correctness, live shared-record updates, map behaviour, and desktop/mobile layout.
 - [x] Save a verified coordinator command-center checkpoint.
 - [x] Save the final post-command-center checkpoint after verification.
+- [x] Confirm the durable non-blocking execution approach for optional AI analysis and preserve core incident-operation independence.
+- [x] Add isolated AI analysis and audit structures for validated classification, summaries, responder guidance, outcomes, confidence, and duration without changing core incident ownership or lifecycle control.
+- [x] Implement safety-validated server-side AI classification and operational summarization with minimal incident inputs, structured-output guards, and deterministic fallbacks.
+- [x] Implement configurable deterministic responder scoring and AI-assisted responder suitability guidance without automated assignment.
+- [x] Add a coordinator-only operational AI assistant grounded exclusively in current authorized RANEEV data.
+- [x] Integrate concise AI-assisted insights into existing Citizen, Volunteer, Coordinator, and Admin surfaces without redesigning existing UI/UX.
+- [x] Test malformed/unavailable AI handling, safety escalation, validation, deterministic scoring, authorization, and end-to-end core-flow resilience.
+- [x] Save a verified RANEEV AI intelligence-layer checkpoint.
+- [x] Implement the confirmed durable queued AI processing path with persistent status, retry-safe handling, and no dependency from core emergency actions.
+- [x] Save the final post-AI intelligence-layer checkpoint after verification.

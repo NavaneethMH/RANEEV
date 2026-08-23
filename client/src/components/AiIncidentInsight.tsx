@@ -1,0 +1,11 @@
+import { Sparkles } from "lucide-react";
+import { SurfaceCard } from "@/components/RaneevUI";
+import { trpc } from "@/lib/trpc";
+
+export function AiIncidentInsight({ publicId, compact = false, showResponderSuggestions = false }: { publicId: string; compact?: boolean; showResponderSuggestions?: boolean }) {
+  const insight = trpc.ai.incidentInsight.useQuery({ publicId }, { refetchInterval: 12_000 });
+  const recommendations = trpc.ai.responderRecommendations.useQuery({ publicId }, { enabled: showResponderSuggestions, refetchInterval: 12_000 });
+  if (insight.isLoading || !insight.data?.available || !insight.data.analysis) return null;
+  const analysis = insight.data.analysis;
+  return <SurfaceCard tone="info" className={compact ? "p-4" : "p-5"}><div className="flex items-start gap-3"><Sparkles className="mt-0.5 h-4 w-4 shrink-0 text-[#0e4e78]" /><div className="min-w-0"><p className="rn-eyebrow">AI-assisted incident classification</p><p className="mt-2 text-sm font-extrabold text-[#17212b]">{analysis.classification.category.replace(/_/g, " ")} · {analysis.classification.severity} · {analysis.classification.recommendedResponderType.replace(/_/g, " ")} responder</p><p className="mt-2 text-xs font-medium leading-5 text-[#52626c]">{analysis.summary.summary}</p>{analysis.summary.unknownInformation.length ? <p className="mt-2 text-[0.68rem] font-semibold text-[#60707c]">Unknown: {analysis.summary.unknownInformation.join(" · ")}</p> : null}{showResponderSuggestions && recommendations.data?.length ? <div className="mt-4 border-t border-[#cbdde6] pt-3"><p className="text-[0.65rem] font-extrabold uppercase tracking-[0.1em] text-[#0e4e78]">Responder suggestions</p>{recommendations.data.map(candidate => <div key={candidate.userId} className="mt-2 rounded-md bg-white px-3 py-2"><div className="flex items-center justify-between gap-3"><span className="text-xs font-extrabold text-[#17212b]">{candidate.name}</span><span className="rn-mono text-[0.65rem] font-extrabold text-[#247352]">{candidate.score.toFixed(1)}</span></div><p className="mt-1 text-[0.65rem] font-semibold text-[#60707c]">{candidate.explanation}</p></div>)}</div> : null}<p className="mt-3 text-[0.67rem] font-semibold leading-5 text-[#60707c]">Recommendation only. Verify the situation and follow authorized operational procedures.</p></div></div></SurfaceCard>;
+}

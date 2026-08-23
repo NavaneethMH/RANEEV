@@ -16,6 +16,9 @@ export const emergencyTypes = ["medical", "road_accident", "injury", "fire", "un
 export const ghrSeverityLevels = ["unassessed", "standard", "urgent", "critical"] as const;
 export const ghrEscalationStates = ["not_escalated", "monitoring", "facility_contacted", "professional_services_contacted"] as const;
 export const incidentEventTypes = ["created", "search_started", "responder_accepted", "en_route", "arrived", "assistance_started", "severity_assessed", "facility_selected", "escalated", "resolved"] as const;
+export const aiJobStatuses = ["pending", "processing", "completed", "failed"] as const;
+export const aiAuditStatuses = ["succeeded", "failed", "fallback"] as const;
+export const aiOperations = ["incident_enrichment", "coordinator_assistant"] as const;
 
 /**
  * `openId` remains the stable internal subject key for template compatibility.
@@ -35,6 +38,7 @@ export const users = mysqlTable("users", {
   volunteerLatitudeE6: int("volunteerLatitudeE6"),
   volunteerLongitudeE6: int("volunteerLongitudeE6"),
   volunteerLocationUpdatedAt: timestamp("volunteerLocationUpdatedAt"),
+  volunteerSkills: varchar("volunteerSkills", { length: 500 }).notNull().default("[]"),
   verifiedAt: timestamp("verifiedAt"),
   sessionVersion: int("sessionVersion").notNull().default(1),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
@@ -92,6 +96,36 @@ export const incidentEvents = mysqlTable("incidentEvents", {
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 }, table => [index("incident_events_incident_idx").on(table.incidentId), index("incident_events_created_idx").on(table.createdAt)]);
 
+/** Optional AI work is isolated from emergency progression. Jobs may fail without changing an incident’s lifecycle or assignment. */
+export const aiAnalysisJobs = mysqlTable("aiAnalysisJobs", {
+  id: int("id").autoincrement().primaryKey(),
+  incidentId: int("incidentId").notNull().references(() => incidents.id).unique(),
+  status: mysqlEnum("status", aiJobStatuses).notNull().default("pending"),
+  attemptCount: int("attemptCount").notNull().default(0),
+  lastErrorCode: varchar("lastErrorCode", { length: 120 }),
+  scheduledAt: timestamp("scheduledAt").defaultNow().notNull(),
+  lockedAt: timestamp("lockedAt"),
+  completedAt: timestamp("completedAt"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, table => [index("ai_jobs_status_schedule_idx").on(table.status, table.scheduledAt)]);
+
+/** Minimized metadata and validated structured output for optional AI operations. Raw prompts and profile data are not persisted. */
+export const aiIncidentAudits = mysqlTable("aiIncidentAudits", {
+  id: int("id").autoincrement().primaryKey(),
+  incidentId: int("incidentId").references(() => incidents.id),
+  actorUserId: int("actorUserId").references(() => users.id),
+  operation: mysqlEnum("operation", aiOperations).notNull(),
+  status: mysqlEnum("status", aiAuditStatuses).notNull(),
+  modelIdentifier: varchar("modelIdentifier", { length: 120 }),
+  inputMetadata: varchar("inputMetadata", { length: 500 }).notNull(),
+  outputJson: varchar("outputJson", { length: 6_000 }),
+  confidencePercent: int("confidencePercent"),
+  failureCode: varchar("failureCode", { length: 120 }),
+  durationMs: int("durationMs").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, table => [index("ai_audits_incident_created_idx").on(table.incidentId, table.createdAt), index("ai_audits_operation_created_idx").on(table.operation, table.createdAt)]);
+
 export type AppRole = (typeof appRoles)[number];
 export type ProfileStatus = (typeof profileStatuses)[number];
 export type VolunteerAvailability = (typeof volunteerAvailabilityStates)[number];
@@ -99,7 +133,12 @@ export type EmergencyType = (typeof emergencyTypes)[number];
 export type GhrSeverity = (typeof ghrSeverityLevels)[number];
 export type GhrEscalation = (typeof ghrEscalationStates)[number];
 export type IncidentEventType = (typeof incidentEventTypes)[number];
+export type AiJobStatus = (typeof aiJobStatuses)[number];
+export type AiAuditStatus = (typeof aiAuditStatuses)[number];
+export type AiOperation = (typeof aiOperations)[number];
 export type User = typeof users.$inferSelect;
 export type InsertUser = typeof users.$inferInsert;
 export type Incident = typeof incidents.$inferSelect;
 export type IncidentEvent = typeof incidentEvents.$inferSelect;
+export type AiAnalysisJob = typeof aiAnalysisJobs.$inferSelect;
+export type AiIncidentAudit = typeof aiIncidentAudits.$inferSelect;

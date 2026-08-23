@@ -43,6 +43,13 @@
       "when": 1787492100000,
       "tag": "0005_ghr_golden_hour",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "5",
+      "when": 1787494200000,
+      "tag": "0006_ai_intelligence_layer",
+      "breakpoints": true
     }
   ]
 }

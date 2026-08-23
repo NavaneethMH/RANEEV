@@ -9,6 +9,8 @@ import { clearCredentialSession, establishCredentialSession, hashPassword, valid
 import * as db from "./db";
 import { systemRouter } from "./_core/systemRouter";
 import { adminProcedure, protectedProcedure, publicProcedure, roleProcedure, router } from "./_core/trpc";
+import { answerCoordinatorQuestion, processAiAnalysisQueue } from "./ai/service";
+import { validateEnrichment } from "./ai/validation";
 
 function publicUser(user: User) {
   return { id: user.id, name: user.name, email: user.email, phone: user.phone, role: user.role, profileStatus: user.profileStatus, createdAt: user.createdAt, updatedAt: user.updatedAt };
@@ -187,12 +189,53 @@ export const appRouter = router({
       catch (error) { if (error instanceof TRPCError) throw error; throw new TRPCError({ code: "CONFLICT", message: error instanceof Error ? error.message : "Golden Hour Response could not be resolved." }); }
     }),
   }),
+  ai: router({
+    citizenStatus: roleProcedure(["citizen"]).input(z.object({ publicId: z.string().min(3).max(40) })).query(async ({ ctx, input }) => {
+      const incident = await db.getIncidentByPublicId(input.publicId);
+      if (!incident) throw new TRPCError({ code: "NOT_FOUND", message: "Incident not found." });
+      if (!canReadIncident(ctx.user, incident)) throw new TRPCError({ code: "FORBIDDEN", message: "You do not have permission to access this coordination update." });
+      const job = await db.getAiAnalysisJobForIncident(incident.id);
+      if (!job || ["pending", "processing"].includes(job.status)) return { state: "reviewing" as const, message: "Your request is active. Optional operational review is being prepared while responder matching continues." };
+      if (job.status === "completed") return { state: "ready" as const, message: "Your request remains under active coordination. Responder matching and emergency updates continue normally." };
+      return { state: "unavailable" as const, message: "Your request remains under active coordination. Optional review is unavailable, but responder matching continues normally." };
+    }),
+    incidentInsight: protectedProcedure.input(z.object({ publicId: z.string().min(3).max(40) })).query(async ({ ctx, input }) => {
+      const incident = await db.getIncidentByPublicId(input.publicId);
+      if (!incident) throw new TRPCError({ code: "NOT_FOUND", message: "Incident not found." });
+      if (!canReadIncident(ctx.user, incident)) throw new TRPCError({ code: "FORBIDDEN", message: "You do not have permission to access this incident insight." });
+      if (ctx.user.role === "citizen") throw new TRPCError({ code: "FORBIDDEN", message: "AI operational analysis is restricted to assigned responders and coordinators." });
+      const audit = await db.getLatestAiInsight(incident.id);
+      if (!audit?.outputJson) return { status: audit?.status ?? "pending", available: false, analysis: null, createdAt: audit?.createdAt ?? null };
+      try {
+        const parsed = JSON.parse(audit.outputJson) as { enrichment?: unknown };
+        const analysis = validateEnrichment(parsed.enrichment, incident.emergencyType, incident.description);
+        return { status: audit.status, available: Boolean(analysis), analysis, createdAt: audit.createdAt };
+      } catch { return { status: audit.status, available: false, analysis: null, createdAt: audit.createdAt }; }
+    }),
+    responderRecommendations: roleProcedure(["coordinator", "admin"]).input(z.object({ publicId: z.string().min(3).max(40) })).query(async ({ ctx, input }) => {
+      const incident = await db.getIncidentByPublicId(input.publicId);
+      if (!incident) throw new TRPCError({ code: "NOT_FOUND", message: "Incident not found." });
+      if (!canReadIncident(ctx.user, incident)) throw new TRPCError({ code: "FORBIDDEN", message: "You do not have permission to access responder recommendations." });
+      const audit = await db.getLatestAiInsight(incident.id);
+      if (!audit?.outputJson) return [];
+      try {
+        const parsed = JSON.parse(audit.outputJson) as { responderRecommendations?: unknown };
+        return Array.isArray(parsed.responderRecommendations) ? parsed.responderRecommendations.filter((candidate): candidate is { userId: number; name: string; score: number; explanation: string } => Boolean(candidate) && typeof candidate === "object" && typeof (candidate as Record<string, unknown>).userId === "number" && typeof (candidate as Record<string, unknown>).name === "string" && typeof (candidate as Record<string, unknown>).score === "number" && typeof (candidate as Record<string, unknown>).explanation === "string").slice(0, 5) : [];
+      } catch { return []; }
+    }),
+    assistant: roleProcedure(["coordinator", "admin"]).input(z.object({ question: z.string().trim().min(3).max(400) })).mutation(({ ctx, input }) => answerCoordinatorQuestion(ctx.user.id, input.question)),
+    processDevelopmentQueue: roleProcedure(["coordinator", "admin"]).mutation(async () => {
+      if (process.env.NODE_ENV === "production") throw new TRPCError({ code: "FORBIDDEN", message: "AI queue processing is handled by the protected scheduled worker in production." });
+      return processAiAnalysisQueue(10);
+    }),
+  }),
   coordinator: router({
     activeIncidents: roleProcedure(["coordinator", "admin"]).query(({ ctx }) => db.listIncidentsVisibleTo(ctx.user)),
     commandCenter: roleProcedure(["coordinator", "admin"]).query(() => db.getCoordinatorCommandCenter()),
   }),
   admin: router({
     users: adminProcedure.query(() => db.listUsersForAdmin()),
+    aiAudits: adminProcedure.query(() => db.listAiAudits()),
     updateRole: adminProcedure.input(z.object({ userId: z.number().int().positive(), role: z.enum(appRoles) })).mutation(async ({ ctx, input }) => {
       if (!canChangeRole(ctx.user, input.userId)) throw new TRPCError({ code: "FORBIDDEN", message: "Administrators cannot change their own role in an active session." });
       const updated = await db.updateUserRole(input.userId, input.role as AppRole);
