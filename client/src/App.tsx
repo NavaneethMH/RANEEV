@@ -1,42 +1,25 @@
+/* RANEEV Clinical Wayfinding — route map for the public, citizen, volunteer, coordinator, and admin frontend shells. */
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import NotFound from "@/pages/NotFound";
 import { Route, Switch } from "wouter";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { ThemeProvider } from "./contexts/ThemeContext";
-import Home from "./pages/Home";
-
+import { AdminPortal, AuthPage, CitizenPortal, CoordinatorPortal, LandingPage, RoleSelection, VolunteerPortal } from "./pages/RaneevScreens";
 
 function Router() {
-  return (
-    <Switch>
-      <Route path={"/"} component={Home} />
-      <Route path={"/404"} component={NotFound} />
-      {/* Final fallback route */}
-      <Route component={NotFound} />
-    </Switch>
-  );
+  return <Switch>
+    <Route path="/" component={LandingPage} />
+    <Route path="/login">{() => <AuthPage kind="login" />}</Route>
+    <Route path="/register">{() => <AuthPage kind="register" />}</Route>
+    <Route path="/roles" component={RoleSelection} />
+    <Route path="/citizen/:page?">{({ page }) => <CitizenPortal page={page} />}</Route>
+    <Route path="/volunteer/:page?">{({ page }) => <VolunteerPortal page={page} />}</Route>
+    <Route path="/coordinator/:page?">{({ page }) => <CoordinatorPortal page={page} />}</Route>
+    <Route path="/admin/:page?">{({ page }) => <AdminPortal page={page} />}</Route>
+    <Route path="/404" component={NotFound} />
+    <Route component={NotFound} />
+  </Switch>;
 }
 
-// NOTE: About Theme
-// - First choose a default theme according to your design style (dark or light bg), than change color palette in index.css
-//   to keep consistent foreground/background color across components
-// - If you want to make theme switchable, pass `switchable` ThemeProvider and use `useTheme` hook
-
-function App() {
-  return (
-    <ErrorBoundary>
-      <ThemeProvider
-        defaultTheme="light"
-        // switchable
-      >
-        <TooltipProvider>
-          <Toaster />
-          <Router />
-        </TooltipProvider>
-      </ThemeProvider>
-    </ErrorBoundary>
-  );
-}
-
-export default App;
+export default function App() { return <ErrorBoundary><ThemeProvider defaultTheme="light"><TooltipProvider><Toaster position="top-right" richColors /><Router /></TooltipProvider></ThemeProvider></ErrorBoundary>; }
